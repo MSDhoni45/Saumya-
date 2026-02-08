@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Saumya Love Card 💕</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 50%, #fecfef 100%); 
+      height: 100vh; display: flex; align-items: center; justify-content: center; font-family: 'Arial', sans-serif; 
+    }
+    .card { 
+      background: white; border-radius: 20px; padding: 40px 30px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.1); 
+      max-width: 300px; animation: heartbeat 2s infinite; 
+    }
+    @keyframes heartbeat { 0%,100%{transform:scale(1);} 50%{transform:scale(1.05);} }
+    h1 { font-size: 28px; color: #ff6b9d; margin-bottom: 10px; }
+    .subtitle { color: #666; font-size: 16px; margin-bottom: 30px; }
+    .heart { font-size: 40px; color: #ff6b9d; margin-bottom: 20px; animation: bounce 1s infinite; }
+    @keyframes bounce { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-10px);} }
+    button { 
+      background: linear-gradient(45deg, #ff6b9d, #ff9a9e); color: white; border: none; padding: 15px 40px; 
+      border-radius: 50px; font-size: 18px; cursor: pointer; transition: all 0.3s; box-shadow: 0 10px 20px rgba(255,107,157,0.3); 
+    }
+    button:hover { transform: scale(1.05); box-shadow: 0 15px 30px rgba(255,107,157,0.4); }
+    button.shake { animation: shake 0.5s; }
+    @keyframes shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-5px);} 75%{transform:translateX(5px);} }
+    .question { display: none; text-align: center; margin-top: 20px; }
+    .question.active { display: block; animation: fadeIn 0.5s; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    .q-text { font-size: 24px; color: #ff6b9d; margin-bottom: 20px; }
+    .hint { font-size: 14px; color: #ff69b4; font-style: italic; margin-bottom: 10px; }
+    .yes-no { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+    .yes-no button { padding: 12px 30px; font-size: 16px; }
+    .final { display: none; }
+    .final.active { display: block; font-size: 20px; color: #ff1493; animation: fadeIn 0.5s; }
+    .panda { font-size: 50px; margin: 20px 0; animation: bounce 2s infinite; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="heart">💖</div>
+    <h1>Hey love</h1>
+    <p class="subtitle">Open this special card for Saumya 💕</p>
+    <button onclick="startQuestions()">Click Now 🙂</button>
+    
+    <div id="questions" class="question">
+      <div id="hint" class="hint"></div>
+      <div class="q-text" id="q-text"></div>
+      <div class="yes-no">
+        <button id="yes-btn" onclick="answerQuestion('yes')">Yes 💕</button>
+        <button id="no-btn" onclick="answerQuestion('no')">No 😏</button>
+      </div>
+    </div>
+    
+    <div id="final" class="final">
+      <p>Yay Saumya! You're my everything 💖</p>
+      <div class="panda">🐼💝 Pookie Panda Forever! 🐼</div>
+      <p>I'll hold your hand forever, Saumya 💞</p>
+    </div>
+  </div>
+
+  <script>
+    const questions = [
+      "Do you love me, Saumya?",
+      "Favorite memory with me?",
+      "Dream date idea?",
+      "Secret wish for us?",
+      "Song that reminds you of our love?",
+      "Cutest nickname for Saumya?",
+      "Adventure we'd go on?",
+      "One word for our vibe?",
+      "Ready to be my pookie forever? 💝"
+    ];
+    let currentQ = 0;
+    let answeredYes = false;
+
+    function startQuestions() {
+      document.querySelector('.card > button').style.display = 'none';
+      document.getElementById('questions').classList.add('active');
+      showQuestion();
+    }
+
+    function showQuestion() {
+      document.getElementById('q-text').textContent = questions[currentQ];
+      document.getElementById('hint').textContent = '';
+      answeredYes = false;
+    }
+
+    function answerQuestion(answer) {
+      const noBtn = document.getElementById('no-btn');
+      if (answer === 'no') {
+        noBtn.classList.add('shake');
+        setTimeout(() => noBtn.classList.remove('shake'), 500);
+        document.getElementById('hint').textContent = 'Aww Saumya, try again? 😘 Say Yes for next!';
+        return;
+      } else {
+        answeredYes = true;
+        currentQ++;
+        if (currentQ >= questions.length) {
+          document.getElementById('questions').classList.remove('active');
+          document.getElementById('final').classList.add('active');
+          return;
+        }
+        showQuestion();
+      }
+    }
+  </script>
+</body>
+</html>
