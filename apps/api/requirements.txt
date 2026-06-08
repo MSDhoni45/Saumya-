@@ -14,6 +14,9 @@ alembic==1.14.1
 # --- Auth: JWT validation against Supabase's JWKS ----------------------------
 PyJWT[crypto]==2.10.1
 
+# --- Secrets: at-rest encryption for stored WhatsApp/Google OAuth tokens -----
+cryptography==44.0.0
+
 # --- HTTP client (Supabase JWKS, WhatsApp/OpenAI/Anthropic/Google calls) ------
 httpx==0.28.1
 tenacity==9.0.0

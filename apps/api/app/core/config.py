@@ -1,0 +1,52 @@
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    # --- App ---------------------------------------------------------------
+    environment: str = "local"
+    debug: bool = True
+    app_name: str = "WhatsAgent AI API"
+    api_v1_prefix: str = "/api/v1"
+    allowed_origins: list[str] = ["http://localhost:3000"]
+
+    # --- Database / Redis ----------------------------------------------------
+    database_url: str
+    redis_url: str = "redis://localhost:6379/0"
+
+    # --- Supabase (JWT validation via JWKS) ----------------------------------
+    supabase_url: str
+    supabase_jwks_url: str
+    supabase_service_role_key: str
+    supabase_jwt_audience: str = "authenticated"
+    supabase_jwt_issuer: str
+
+    # --- WhatsApp Cloud API ---------------------------------------------------
+    whatsapp_app_id: str
+    whatsapp_app_secret: str
+    whatsapp_webhook_verify_token: str
+    whatsapp_graph_api_version: str = "v21.0"
+    whatsapp_graph_api_base_url: str = "https://graph.facebook.com"
+
+    # --- Token encryption (at-rest encryption of stored OAuth/API tokens) ----
+    token_encryption_key: str
+
+    # --- Observability --------------------------------------------------------
+    sentry_dsn: str | None = None
+    sentry_traces_sample_rate: float = 0.1
+
+    @property
+    def whatsapp_graph_api_url(self) -> str:
+        return f"{self.whatsapp_graph_api_base_url}/{self.whatsapp_graph_api_version}"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()  # type: ignore[call-arg]
+
+
+settings = get_settings()
