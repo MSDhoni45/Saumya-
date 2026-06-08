@@ -21,6 +21,21 @@ to build and **how the pieces fit together** before implementation begins.
 5. [`05-roadmap-and-implementation-plan.md`](./05-roadmap-and-implementation-plan.md) —
    Phased roadmap with timeline estimates, task breakdowns, and acceptance
    criteria per phase.
+6. [`06-fastapi-backend-architecture.md`](./06-fastapi-backend-architecture.md) —
+   Backend layering, app composition, dependency injection, error model,
+   background-job integration, observability, testing strategy.
+7. [`07-api-endpoints-reference.md`](./07-api-endpoints-reference.md) —
+   Full endpoint-by-endpoint reference: methods, paths, auth levels, request/
+   response shapes, pagination/filtering conventions.
+8. [`08-authentication-flow.md`](./08-authentication-flow.md) — Step-by-step
+   signup/login/password-reset/invite flows (Supabase Auth ⇄ FastAPI), the
+   request-time JWT/org/role validation chain, and the role model.
+9. [`09-whatsapp-integration-architecture.md`](./09-whatsapp-integration-architecture.md) —
+   WABA connection setup, inbound/outbound message pipelines, media handling,
+   failure-handling matrix, and testing/sandbox strategy.
+10. [`10-backend-implementation-order.md`](./10-backend-implementation-order.md) —
+    Granular, dependency-ordered backend build sequence with exit checks and
+    a 2-engineer fan-out plan.
 
 ## Tech stack (confirmed)
 
