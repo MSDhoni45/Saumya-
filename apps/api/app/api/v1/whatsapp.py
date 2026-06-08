@@ -11,6 +11,7 @@ from app.db.session import get_db_session
 from app.models.whatsapp import Conversation, Message, WhatsAppAccount
 from app.schemas.whatsapp import (
     ConversationResponse,
+    ConversationUpdateRequest,
     MessageResponse,
     SendMessageRequest,
     SendMessageResponse,
@@ -147,6 +148,36 @@ async def list_conversations(business_id: uuid.UUID, session: AsyncSession = Dep
     )
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+@router.patch("/{business_id}/conversations/{conversation_id}", response_model=ConversationResponse)
+async def update_conversation(
+    business_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    payload: ConversationUpdateRequest,
+    session: AsyncSession = Depends(get_db_session),
+) -> Conversation:
+    """Update a conversation's status and/or assignment.
+
+    Backs the inbox's human-takeover flow: claiming a conversation sets
+    `status="handoff"` + `assigned_user_id`, hand-back clears both, and
+    reassignment changes `assigned_user_id` alone. `assigned_user_id` is only
+    touched when the client explicitly includes it (so a status-only update
+    can't accidentally clear an existing assignment) — `None` clears it.
+    """
+    conversation = await session.get(Conversation, conversation_id)
+    if conversation is None or conversation.business_id != business_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+
+    fields_set = payload.model_fields_set
+    if "status" in fields_set and payload.status is not None:
+        conversation.status = payload.status
+    if "assigned_user_id" in fields_set:
+        conversation.assigned_user_id = payload.assigned_user_id
+
+    await session.flush()
+    await session.refresh(conversation)
+    return conversation
 
 
 @router.get("/{business_id}/conversations/{conversation_id}/messages", response_model=list[MessageResponse])

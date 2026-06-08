@@ -10,7 +10,7 @@ export default async function DashboardPage() {
   const { user, business } = session;
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Welcome back{user.full_name ? `, ${user.full_name}` : ""}</h1>
         <p className="mt-1 text-sm text-slate-500">

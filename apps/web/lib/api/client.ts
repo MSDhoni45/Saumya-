@@ -23,11 +23,16 @@ export class ApiError extends Error {
 
 type FetchOptions = Omit<RequestInit, "body"> & { json?: unknown };
 
+// Mirrors the fallback in next.config.ts's rewrite and middleware.ts's
+// `refreshSessionCookies` — same source of truth for "where FastAPI lives".
+const BACKEND_API_URL = process.env.BACKEND_API_URL ?? "http://localhost:8000";
+
 async function rawFetch(path: string, options: FetchOptions = {}): Promise<Response> {
   const isServer = typeof window === "undefined";
   const headers = new Headers(options.headers);
   headers.set("Content-Type", "application/json");
 
+  let url: string;
   if (isServer) {
     // Server Components/Route Handlers must forward the incoming cookies —
     // there is no ambient browser cookie jar on this side of the fence.
@@ -37,6 +42,15 @@ async function rawFetch(path: string, options: FetchOptions = {}): Promise<Respo
     const { cookies: nextCookies } = await import("next/headers");
     const cookieStore = await nextCookies();
     headers.set("Cookie", cookieStore.toString());
+
+    // Node's `fetch` (unlike the browser's) has no same-origin context to
+    // resolve a relative URL against — it throws `ERR_INVALID_URL`. Call
+    // FastAPI directly here (exactly like middleware.ts's refresh call);
+    // the browser keeps using the same-origin `/backend/*` rewrite below so
+    // its httpOnly cookies stay first-party.
+    url = `${BACKEND_API_URL}/api/v1${path}`;
+  } else {
+    url = `/backend/api/v1${path}`;
   }
 
   const init: RequestInit = {
@@ -47,7 +61,7 @@ async function rawFetch(path: string, options: FetchOptions = {}): Promise<Respo
     cache: "no-store",
   };
 
-  return fetch(`/backend/api/v1${path}`, init);
+  return fetch(url, init);
 }
 
 async function parseBody(response: Response): Promise<unknown> {

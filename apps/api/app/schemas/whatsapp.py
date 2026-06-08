@@ -72,8 +72,25 @@ class ConversationResponse(BaseModel):
     contact_phone: str
     contact_name: str | None
     status: Literal["open", "pending", "handoff", "closed"]
+    assigned_user_id: uuid.UUID | None
     last_message_at: datetime | None
     created_at: datetime
+
+
+class ConversationUpdateRequest(BaseModel):
+    """Partial update for human takeover / hand-back / reassignment.
+
+    Both fields are optional so a caller can change just one (e.g. reassign
+    without touching status). Distinguishing "field omitted" from "field set to
+    null" matters for `assigned_user_id` (omitted = leave as-is, null = clear
+    the assignment/hand back to the AI pool) — the route checks
+    `model_fields_set` rather than relying on the default.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["open", "pending", "handoff", "closed"] | None = None
+    assigned_user_id: uuid.UUID | None = None
 
 
 # --- Inbound webhook payload (Meta Cloud API "Messages" webhook shape) --------
