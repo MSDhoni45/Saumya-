@@ -1,0 +1,36 @@
+# --- Web framework & server -------------------------------------------------
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# --- Settings & validation ---------------------------------------------------
+pydantic==2.10.5
+pydantic-settings==2.7.1
+
+# --- Database (async SQLAlchemy + Postgres driver) ---------------------------
+sqlalchemy[asyncio]==2.0.37
+asyncpg==0.30.0
+alembic==1.14.1
+
+# --- Auth: JWT validation against Supabase's JWKS ----------------------------
+PyJWT[crypto]==2.10.1
+
+# --- HTTP client (Supabase JWKS, WhatsApp/OpenAI/Anthropic/Google calls) ------
+httpx==0.28.1
+tenacity==9.0.0
+
+# --- Background jobs ----------------------------------------------------------
+celery[redis]==5.4.0
+redis==5.2.1
+
+# --- Utilities ----------------------------------------------------------------
+python-multipart==0.0.20   # form/file uploads
+orjson==3.10.15            # fast JSON responses
+
+# --- Observability -------------------------------------------------------------
+sentry-sdk[fastapi]==2.20.0
+
+# --- Dev / test tooling --------------------------------------------------------
+pytest==8.3.4
+pytest-asyncio==0.25.2
+ruff==0.9.2
+mypy==1.14.1
