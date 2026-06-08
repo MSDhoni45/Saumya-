@@ -11,6 +11,7 @@ from app.services import conversation_service
 from app.services.encryption import decrypt_secret
 from app.services.whatsapp_client import WhatsAppClient
 from app.services.storage import upload_inbound_media
+from app.workers.tasks.agent_tasks import generate_and_send_reply
 
 logger = logging.getLogger(__name__)
 
@@ -124,10 +125,19 @@ async def _persist_inbound_messages(session: AsyncSession, phone_number_id, cont
             except Exception:
                 logger.exception("Failed to fetch/store inbound media id=%s", media_payload.id)
 
-        await conversation_service.store_inbound_message(
+        stored_message = await conversation_service.store_inbound_message(
             session,
             business_id=account.business_id,
             conversation=conversation,
             whatsapp_message=whatsapp_message,
             media_url=media_url,
         )
+
+        if stored_message is not None:
+            # Hand off to Celery so the AI sales agent's reply (LLM + RAG +
+            # Graph API round trips) never blocks this webhook's fast 200.
+            # `stored_message is None` means this was a re-delivery of an
+            # already-processed message — skip to avoid double replies.
+            generate_and_send_reply.delay(
+                conversation_id=str(conversation.id), inbound_message_id=str(stored_message.id)
+            )

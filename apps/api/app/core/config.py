@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     whatsapp_graph_api_version: str = "v21.0"
     whatsapp_graph_api_base_url: str = "https://graph.facebook.com"
 
+    # --- AI providers (provider-agnostic orchestration layer) ----------------
+    openai_api_key: str | None = None
+    anthropic_api_key: str | None = None
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536
+
     # --- Token encryption (at-rest encryption of stored OAuth/API tokens) ----
     token_encryption_key: str
 
