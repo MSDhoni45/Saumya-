@@ -5,6 +5,7 @@ uvicorn[standard]==0.34.0
 # --- Settings & validation ---------------------------------------------------
 pydantic==2.10.5
 pydantic-settings==2.7.1
+email-validator==2.2.0     # Pydantic `EmailStr` (signup/login/password-reset schemas)
 
 # --- Database (async SQLAlchemy + Postgres driver) ---------------------------
 sqlalchemy[asyncio]==2.0.37

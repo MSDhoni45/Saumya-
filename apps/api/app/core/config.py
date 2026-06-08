@@ -1,6 +1,5 @@
 from functools import lru_cache
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,12 +17,19 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str = "redis://localhost:6379/0"
 
-    # --- Supabase (JWT validation via JWKS) ----------------------------------
+    # --- Supabase (Auth: GoTrue REST + JWT validation via JWKS) --------------
     supabase_url: str
     supabase_jwks_url: str
+    supabase_anon_key: str
     supabase_service_role_key: str
     supabase_jwt_audience: str = "authenticated"
     supabase_jwt_issuer: str
+
+    # --- Auth session cookies (backend-issued, httpOnly) ----------------------
+    auth_access_token_cookie: str = "wa_access_token"
+    auth_refresh_token_cookie: str = "wa_refresh_token"
+    auth_cookie_domain: str | None = None
+    auth_cookie_secure: bool = True
 
     # --- WhatsApp Cloud API ---------------------------------------------------
     whatsapp_app_id: str
@@ -48,6 +54,10 @@ class Settings(BaseSettings):
     @property
     def whatsapp_graph_api_url(self) -> str:
         return f"{self.whatsapp_graph_api_base_url}/{self.whatsapp_graph_api_version}"
+
+    @property
+    def supabase_auth_url(self) -> str:
+        return f"{self.supabase_url}/auth/v1"
 
 
 @lru_cache

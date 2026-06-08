@@ -1,11 +1,15 @@
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 # All timestamp columns are `timestamptz` in the migrations — map to
 # timezone-aware `DateTime` so asyncpg doesn't reject offset-aware Python
@@ -25,6 +29,7 @@ class Business(Base):
 
     whatsapp_accounts: Mapped[list["WhatsAppAccount"]] = relationship(back_populates="business")
     conversations: Mapped[list["Conversation"]] = relationship(back_populates="business")
+    users: Mapped[list["User"]] = relationship(back_populates="business")
 
 
 class WhatsAppAccount(Base):
