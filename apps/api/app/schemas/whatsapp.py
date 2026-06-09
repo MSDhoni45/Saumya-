@@ -75,6 +75,10 @@ class ConversationResponse(BaseModel):
     assigned_user_id: uuid.UUID | None
     last_message_at: datetime | None
     created_at: datetime
+    # Populated by the list endpoint via a correlated subquery — not stored on
+    # the model column, so defaults to None and is filled in by the route.
+    last_message_content: str | None = None
+    last_sender_type: str | None = None
 
 
 class ConversationUpdateRequest(BaseModel):

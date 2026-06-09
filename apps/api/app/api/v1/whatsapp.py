@@ -1,10 +1,10 @@
 import uuid
 
 import httpx
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import Depends
 
 from app.core.config import settings
 from app.db.session import get_db_session
@@ -20,6 +20,7 @@ from app.schemas.whatsapp import (
 )
 from app.services import conversation_service
 from app.services.encryption import decrypt_secret, encrypt_secret
+from app.services.realtime import publish_new_message, stream_conversation
 from app.services.whatsapp_client import WhatsAppApiError, WhatsAppClient
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
@@ -136,18 +137,60 @@ async def send_message(
         whatsapp_message_id=whatsapp_message_id,
     )
 
+    # Flush so the message has DB-assigned fields (id, created_at) before we
+    # serialize it for the SSE broadcast below.
+    await session.flush()
+    await session.refresh(message)
+
+    # Notify any open SSE stream for this thread — this is best-effort (see
+    # publish_new_message's error-swallowing contract), so we fire it before the
+    # HTTP response but after the DB flush so consumers see a committed row.
+    await publish_new_message(str(conversation.id), MessageResponse.model_validate(message).model_dump(mode="json"))
+
     return SendMessageResponse(message_id=message.id, whatsapp_message_id=whatsapp_message_id, status=message.status)
 
 
 @router.get("/{business_id}/conversations", response_model=list[ConversationResponse])
-async def list_conversations(business_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)) -> list[Conversation]:
+async def list_conversations(
+    business_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)
+) -> list[ConversationResponse]:
+    # Correlated subqueries pull the most-recent message's content and sender
+    # type for each conversation in a single round-trip rather than N+1 queries.
+    last_content_subq = (
+        select(Message.content)
+        .where(Message.conversation_id == Conversation.id)
+        .order_by(Message.created_at.desc())
+        .limit(1)
+        .correlate(Conversation)
+        .scalar_subquery()
+    )
+    last_sender_subq = (
+        select(Message.sender_type)
+        .where(Message.conversation_id == Conversation.id)
+        .order_by(Message.created_at.desc())
+        .limit(1)
+        .correlate(Conversation)
+        .scalar_subquery()
+    )
+
     stmt = (
-        select(Conversation)
+        select(
+            Conversation,
+            last_content_subq.label("last_message_content"),
+            last_sender_subq.label("last_sender_type"),
+        )
         .where(Conversation.business_id == business_id)
         .order_by(Conversation.last_message_at.desc().nulls_last())
     )
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
+    rows = (await session.execute(stmt)).all()
+
+    responses: list[ConversationResponse] = []
+    for row in rows:
+        resp = ConversationResponse.model_validate(row.Conversation)
+        resp.last_message_content = row.last_message_content
+        resp.last_sender_type = row.last_sender_type
+        responses.append(resp)
+    return responses
 
 
 @router.patch("/{business_id}/conversations/{conversation_id}", response_model=ConversationResponse)
@@ -178,6 +221,34 @@ async def update_conversation(
     await session.flush()
     await session.refresh(conversation)
     return conversation
+
+
+@router.get("/{business_id}/conversations/{conversation_id}/stream")
+async def stream_conversation_messages(
+    business_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db_session),
+) -> StreamingResponse:
+    """Server-Sent Events stream for real-time message delivery.
+
+    The browser connects once per open conversation thread; new messages arrive
+    as `data:` lines (JSON-encoded MessageResponse) without the overhead of
+    polling. Falls back to the polling layer automatically if the connection
+    drops — see `useMessageStream` in the frontend.
+    """
+    conversation = await session.get(Conversation, conversation_id)
+    if conversation is None or conversation.business_id != business_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+
+    return StreamingResponse(
+        stream_conversation(str(conversation_id)),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering for streaming
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.get("/{business_id}/conversations/{conversation_id}/messages", response_model=list[MessageResponse])

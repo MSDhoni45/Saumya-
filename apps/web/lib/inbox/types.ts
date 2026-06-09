@@ -20,6 +20,9 @@ export interface Conversation {
   assigned_user_id: string | null;
   last_message_at: string | null;
   created_at: string;
+  // Populated by the list endpoint via correlated subquery (not a DB column).
+  last_message_content: string | null;
+  last_sender_type: SenderType | null;
 }
 
 export interface Message {
@@ -32,6 +35,27 @@ export interface Message {
   media_url: string | null;
   status: MessageDeliveryStatus;
   created_at: string;
+}
+
+export type WhatsAppAccountStatus = "pending" | "connected" | "disconnected" | "error";
+
+export interface WhatsAppAccount {
+  id: string;
+  business_id: string;
+  display_name: string | null;
+  phone_number: string;
+  waba_id: string;
+  phone_number_id: string;
+  status: WhatsAppAccountStatus;
+  connected_at: string | null;
+  created_at: string;
+}
+
+export interface ConnectWhatsAppPayload {
+  waba_id: string;
+  phone_number_id: string;
+  access_token: string;
+  display_name?: string;
 }
 
 export interface ConversationUpdatePayload {

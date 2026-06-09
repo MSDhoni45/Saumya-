@@ -4,6 +4,13 @@ import { ConversationStatusBadge, HandlerBadge } from "@/components/inbox/status
 import { contactDisplayName, contactInitials, formatRelativeTime } from "@/lib/inbox/format";
 import type { Conversation } from "@/lib/inbox/types";
 
+const SENDER_PREFIX: Record<string, string> = {
+  ai: "AI: ",
+  agent: "You: ",
+  contact: "",
+  system: "",
+};
+
 export function ConversationListItem({
   conversation,
   isSelected,
@@ -15,6 +22,11 @@ export function ConversationListItem({
   currentUserId: string;
   onSelect: () => void;
 }) {
+  const prefix = conversation.last_sender_type ? (SENDER_PREFIX[conversation.last_sender_type] ?? "") : "";
+  const preview = conversation.last_message_content
+    ? `${prefix}${conversation.last_message_content}`
+    : null;
+
   return (
     <button
       type="button"
@@ -28,13 +40,16 @@ export function ConversationListItem({
         {contactInitials(conversation.contact_name, conversation.contact_phone)}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="flex items-center justify-between gap-2">
+        <span className="flex items-baseline justify-between gap-2">
           <span className="truncate text-sm font-medium text-slate-900">
             {contactDisplayName(conversation.contact_name, conversation.contact_phone)}
           </span>
           <span className="shrink-0 text-xs text-slate-400">{formatRelativeTime(conversation.last_message_at)}</span>
         </span>
-        <span className="mt-1 flex items-center gap-2">
+        {preview ? (
+          <span className="mt-0.5 block truncate text-xs text-slate-500">{preview}</span>
+        ) : null}
+        <span className="mt-1.5 flex items-center gap-2">
           <ConversationStatusBadge status={conversation.status} />
           <span className="text-slate-300" aria-hidden>
             ·

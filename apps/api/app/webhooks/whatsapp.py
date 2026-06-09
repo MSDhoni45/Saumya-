@@ -6,11 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_whatsapp_webhook_handshake, verify_whatsapp_webhook_signature
 from app.db.session import async_session_factory
-from app.schemas.whatsapp import WebhookEnvelope, WebhookMediaPayload
+from app.schemas.whatsapp import MessageResponse, WebhookEnvelope, WebhookMediaPayload
 from app.services import conversation_service
 from app.services.encryption import decrypt_secret
-from app.services.whatsapp_client import WhatsAppClient
+from app.services.realtime import publish_new_message
 from app.services.storage import upload_inbound_media
+from app.services.whatsapp_client import WhatsAppClient
 from app.workers.tasks.agent_tasks import generate_and_send_reply
 
 logger = logging.getLogger(__name__)
@@ -77,8 +78,9 @@ async def _process_message_change(value) -> None:  # noqa: ANN001 - WebhookValue
     contacts_by_wa_id = {c.wa_id: c for c in (value.contacts or [])}
 
     async with async_session_factory() as session:
+        stored: list[dict] = []
         try:
-            await _persist_inbound_messages(session, phone_number_id, contacts_by_wa_id, value.messages or [])
+            stored = await _persist_inbound_messages(session, phone_number_id, contacts_by_wa_id, value.messages or [])
             await session.commit()
         except Exception:
             await session.rollback()
@@ -88,16 +90,26 @@ async def _process_message_change(value) -> None:  # noqa: ANN001 - WebhookValue
             # redelivery (via Meta's own retries, or a future reprocessing job)
             # safe to retry from scratch.
 
+    # Broadcast after commit so SSE consumers see a committed row.
+    for msg_data in stored:
+        await publish_new_message(msg_data["conversation_id"], msg_data)
 
-async def _persist_inbound_messages(session: AsyncSession, phone_number_id, contacts_by_wa_id, messages) -> None:
+
+async def _persist_inbound_messages(
+    session: AsyncSession, phone_number_id: str, contacts_by_wa_id: dict, messages: list
+) -> list[dict]:
+    """Persist a batch of inbound messages and return serialised MessageResponse
+    dicts for each newly-stored message (dupes / re-deliveries excluded)."""
     account = await conversation_service.get_account_by_phone_number_id(session, phone_number_id)
     if account is None:
         logger.warning("Webhook event for unknown phone_number_id=%s", phone_number_id)
-        return
+        return []
 
     client: WhatsAppClient | None = None
     if account.access_token:
         client = WhatsAppClient(phone_number_id=account.phone_number_id, access_token=decrypt_secret(account.access_token))
+
+    stored_data: list[dict] = []
 
     for whatsapp_message in messages:
         contact = contacts_by_wa_id.get(whatsapp_message.from_)
@@ -134,6 +146,10 @@ async def _persist_inbound_messages(session: AsyncSession, phone_number_id, cont
         )
 
         if stored_message is not None:
+            # Serialise while the session is still active so all DB-assigned
+            # fields (id, created_at from RETURNING) are loaded.
+            stored_data.append(MessageResponse.model_validate(stored_message).model_dump(mode="json"))
+
             # Hand off to Celery so the AI sales agent's reply (LLM + RAG +
             # Graph API round trips) never blocks this webhook's fast 200.
             # `stored_message is None` means this was a re-delivery of an
@@ -141,3 +157,5 @@ async def _persist_inbound_messages(session: AsyncSession, phone_number_id, cont
             generate_and_send_reply.delay(
                 conversation_id=str(conversation.id), inbound_message_id=str(stored_message.id)
             )
+
+    return stored_data
