@@ -54,6 +54,33 @@ async def get_current_user(
     return user
 
 
+async def get_optional_current_user(
+    authorization: str | None = Header(None),
+    cookie_token: str | None = Cookie(None, alias=settings.auth_access_token_cookie),
+    session: AsyncSession = Depends(get_db_session),
+) -> User | None:
+    """Like `get_current_user` but returns None instead of raising 401.
+
+    Used by public endpoints that can be hit by both anonymous visitors
+    (new-user invite acceptance) and already-authenticated users.
+    """
+    token: str | None = None
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization[len("bearer "):].strip()
+    elif cookie_token:
+        token = cookie_token
+
+    if token is None:
+        return None
+
+    try:
+        claims = decode_access_token(token)
+    except TokenError:
+        return None
+
+    return await session.get(User, claims.user_id)
+
+
 @dataclass(frozen=True, slots=True)
 class BusinessContext:
     user_id: uuid.UUID

@@ -11,6 +11,7 @@ from app.api.v1.billing import router as billing_api_router
 from app.api.v1.business import router as business_api_router
 from app.api.v1.knowledge import router as knowledge_api_router
 from app.api.v1.leads import router as leads_api_router
+from app.api.v1.team import invite_router, team_router
 from app.api.v1.whatsapp import router as whatsapp_api_router
 from app.core.config import settings
 from app.core.logging import configure_logging
@@ -72,6 +73,10 @@ def create_app() -> FastAPI:
     app.include_router(leads_api_router, prefix=settings.api_v1_prefix)
     app.include_router(agents_api_router, prefix=settings.api_v1_prefix)
     app.include_router(billing_api_router, prefix=settings.api_v1_prefix)
+    app.include_router(team_router, prefix=settings.api_v1_prefix)
+    # invite_router uses /invites prefix (no api_v1_prefix) — public URLs must
+    # be short and bookmarkable, matching the `/invite/accept?token=...` frontend route.
+    app.include_router(invite_router, prefix=settings.api_v1_prefix)
 
     @app.get("/health", tags=["system"])
     async def health() -> dict[str, str]:

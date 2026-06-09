@@ -66,6 +66,19 @@ class Settings(BaseSettings):
     razorpay_growth_plan_id: str | None = None
     razorpay_agency_plan_id: str | None = None
 
+    # --- Email (transactional — invites, notifications) ----------------------
+    sendgrid_api_key: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_use_tls: bool = True
+    email_from_address: str = "noreply@whatsagent.ai"
+    email_from_name: str = "WhatsAgent AI"
+
+    # --- Frontend ------------------------------------------------------------
+    app_frontend_url: str | None = None
+
     @property
     def whatsapp_graph_api_url(self) -> str:
         return f"{self.whatsapp_graph_api_base_url}/{self.whatsapp_graph_api_version}"
