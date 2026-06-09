@@ -124,7 +124,68 @@ class Lead(Base):
     service_interested: Mapped[str | None] = mapped_column(Text)
     stage: Mapped[str] = mapped_column(String, nullable=False, default="new")
     source: Mapped[str] = mapped_column(String, nullable=False, default="whatsapp")
+    # AI-extracted qualification blob — accumulates freetext from the agent
+    # pipeline. Manual agent notes go in LeadNote (separate table with author
+    # attribution and delete capability).
     notes: Mapped[str | None] = mapped_column(Text)
     stage_changed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, server_default=func.now())
+
+    lead_notes: Mapped[list["LeadNote"]] = relationship(
+        back_populates="lead", cascade="all, delete-orphan", order_by="LeadNote.created_at.desc()"
+    )
+    events: Mapped[list["LeadEvent"]] = relationship(
+        back_populates="lead", cascade="all, delete-orphan", order_by="LeadEvent.created_at.asc()"
+    )
+
+
+class LeadNote(Base):
+    """Manual notes written by agents against a lead.
+
+    Kept separate from `Lead.notes` (the AI qualification blob) so notes have
+    author attribution, timestamps, and can be individually deleted without
+    touching the AI-extracted data the sales pipeline depends on.
+    """
+
+    __tablename__ = "lead_notes"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    lead_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("leads.id", ondelete="CASCADE"), nullable=False
+    )
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False
+    )
+    author_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))  # null = AI/system
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, server_default=func.now())
+
+    lead: Mapped["Lead"] = relationship(back_populates="lead_notes")
+
+
+class LeadEvent(Base):
+    """Append-only timeline journal for a lead.
+
+    Every significant change (stage transition, note, field update, assignment)
+    writes one row here. The `payload` JSONB is typed per `event_type` — see
+    the router/service layer for the canonical shapes. New event types never
+    require a schema migration; only a new frontend renderer.
+    """
+
+    __tablename__ = "lead_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    lead_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("leads.id", ondelete="CASCADE"), nullable=False
+    )
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False
+    )
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))  # null = AI/system
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, server_default=func.now())
+
+    lead: Mapped["Lead"] = relationship(back_populates="events")

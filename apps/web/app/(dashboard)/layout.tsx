@@ -37,6 +37,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <a href="/inbox" className="font-medium text-slate-700 hover:text-brand-600">
               Inbox
             </a>
+            <a href="/leads" className="font-medium text-slate-700 hover:text-brand-600">
+              Leads
+            </a>
             <a href="/settings/whatsapp" className="font-medium text-slate-700 hover:text-brand-600">
               Settings
             </a>

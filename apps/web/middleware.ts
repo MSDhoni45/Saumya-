@@ -9,7 +9,7 @@ const REFRESH_COOKIE = "wa_refresh_token";
 const BACKEND_API_URL = process.env.BACKEND_API_URL ?? "http://localhost:8000";
 
 const AUTH_ROUTES = ["/login", "/signup", "/forgot-password", "/reset-password"];
-const PROTECTED_PREFIXES = ["/dashboard", "/onboarding", "/inbox", "/settings"];
+const PROTECTED_PREFIXES = ["/dashboard", "/onboarding", "/inbox", "/leads", "/settings"];
 
 /**
  * Calls the backend's refresh endpoint with the incoming refresh-token
