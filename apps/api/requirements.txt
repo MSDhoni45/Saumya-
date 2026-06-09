@@ -35,6 +35,10 @@ redis==5.2.1
 python-multipart==0.0.20   # form/file uploads
 orjson==3.10.15            # fast JSON responses
 
+# --- Billing (Stripe + Razorpay) ----------------------------------------------
+stripe==11.4.0
+razorpay==1.4.2
+
 # --- Observability -------------------------------------------------------------
 sentry-sdk[fastapi]==2.20.0
 

@@ -6,7 +6,11 @@ celery_app = Celery(
     "whatsagent",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["app.workers.tasks.agent_tasks", "app.workers.tasks.knowledge_tasks"],
+    include=[
+        "app.workers.tasks.agent_tasks",
+        "app.workers.tasks.knowledge_tasks",
+        "app.workers.tasks.billing_tasks",
+    ],
 )
 
 celery_app.conf.update(

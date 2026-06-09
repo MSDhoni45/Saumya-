@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import async_session_factory
 from app.models.whatsapp import Conversation, Message, WhatsAppAccount
 from app.services import conversation_service, sales_agent_service
+from app.services.billing_service import UsageLimitExceeded, check_usage_limit, increment_usage
 from app.services.encryption import decrypt_secret
 from app.services.whatsapp_client import WhatsAppApiError, WhatsAppClient
 from app.workers.celery_app import celery_app
@@ -74,6 +75,12 @@ async def _run_turn(session: AsyncSession, conversation_id: uuid.UUID, inbound_m
         logger.warning("No connected WhatsApp account for conversation_id=%s — skipping agent reply", conversation_id)
         return
 
+    try:
+        await check_usage_limit(session, business_id=conversation.business_id)
+    except UsageLimitExceeded as exc:
+        logger.info("AI reply suppressed — %s (business_id=%s)", exc, conversation.business_id)
+        return
+
     agent = await sales_agent_service.get_active_agent(session, business_id=conversation.business_id)
     if agent is None:
         logger.info("No active sales agent configured for business_id=%s — skipping", conversation.business_id)
@@ -115,6 +122,8 @@ async def _run_turn(session: AsyncSession, conversation_id: uuid.UUID, inbound_m
         outbound_message_id=outbound_message.id,
         result=result,
     )
+
+    await increment_usage(session, business_id=conversation.business_id)
 
 
 async def _recent_messages(session: AsyncSession, conversation_id: uuid.UUID) -> list[Message]:

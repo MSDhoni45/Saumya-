@@ -51,6 +51,21 @@ class Settings(BaseSettings):
     sentry_dsn: str | None = None
     sentry_traces_sample_rate: float = 0.1
 
+    # --- Stripe ---------------------------------------------------------------
+    stripe_secret_key: str | None = None
+    stripe_webhook_secret: str | None = None
+    stripe_starter_price_id: str | None = None
+    stripe_growth_price_id: str | None = None
+    stripe_agency_price_id: str | None = None
+
+    # --- Razorpay -------------------------------------------------------------
+    razorpay_key_id: str | None = None
+    razorpay_key_secret: str | None = None
+    razorpay_webhook_secret: str | None = None
+    razorpay_starter_plan_id: str | None = None
+    razorpay_growth_plan_id: str | None = None
+    razorpay_agency_plan_id: str | None = None
+
     @property
     def whatsapp_graph_api_url(self) -> str:
         return f"{self.whatsapp_graph_api_base_url}/{self.whatsapp_graph_api_version}"

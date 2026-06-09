@@ -7,12 +7,15 @@ from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 
 from app.api.v1.agents import router as agents_api_router
 from app.api.v1.auth import router as auth_api_router
+from app.api.v1.billing import router as billing_api_router
 from app.api.v1.business import router as business_api_router
 from app.api.v1.knowledge import router as knowledge_api_router
 from app.api.v1.leads import router as leads_api_router
 from app.api.v1.whatsapp import router as whatsapp_api_router
 from app.core.config import settings
 from app.core.logging import configure_logging
+from app.webhooks.razorpay_webhook import router as razorpay_webhook_router
+from app.webhooks.stripe_webhook import router as stripe_webhook_router
 from app.webhooks.whatsapp import router as whatsapp_webhook_router
 
 configure_logging(debug=settings.debug, environment=settings.environment)
@@ -56,15 +59,19 @@ def create_app() -> FastAPI:
             )
         return await call_next(request)
 
-    # Webhooks live outside `/api/v1` — Meta calls this URL directly and it has
-    # its own auth model (signature verification), not the user JWT/org chain.
+    # Webhooks live outside `/api/v1` — payment providers and Meta call these
+    # URLs directly with their own signature-based auth, not user JWTs.
     app.include_router(whatsapp_webhook_router)
+    app.include_router(stripe_webhook_router)
+    app.include_router(razorpay_webhook_router)
+
     app.include_router(auth_api_router, prefix=settings.api_v1_prefix)
     app.include_router(business_api_router, prefix=settings.api_v1_prefix)
     app.include_router(knowledge_api_router, prefix=settings.api_v1_prefix)
     app.include_router(whatsapp_api_router, prefix=settings.api_v1_prefix)
     app.include_router(leads_api_router, prefix=settings.api_v1_prefix)
     app.include_router(agents_api_router, prefix=settings.api_v1_prefix)
+    app.include_router(billing_api_router, prefix=settings.api_v1_prefix)
 
     @app.get("/health", tags=["system"])
     async def health() -> dict[str, str]:
