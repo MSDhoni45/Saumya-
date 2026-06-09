@@ -95,6 +95,7 @@ class BusinessSummary(BaseModel):
     name: str
     industry: str | None
     timezone: str
+    onboarding_completed: bool
 
 
 class MessageResponse(BaseModel):

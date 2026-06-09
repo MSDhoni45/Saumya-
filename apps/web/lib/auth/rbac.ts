@@ -20,6 +20,7 @@ export interface BusinessSummary {
   name: string;
   industry: string | null;
   timezone: string;
+  onboarding_completed: boolean;
 }
 
 export interface MeResponse {

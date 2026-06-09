@@ -1,13 +1,17 @@
+import { redirect } from "next/navigation";
+
 import { roleLabel } from "@/lib/auth/rbac";
 import { getSession } from "@/lib/auth/session";
 
 export default async function DashboardPage() {
   const session = await getSession();
-  // The layout already redirects unauthenticated visitors — `session` is
-  // guaranteed here, but TypeScript can't see across that boundary.
   if (!session) return null;
 
   const { user, business } = session;
+
+  if (business && !business.onboarding_completed) {
+    redirect("/onboarding?step=1");
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">

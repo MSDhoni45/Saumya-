@@ -37,7 +37,7 @@ export default function SignupPage() {
       // Becomes the `business_admin` of a brand-new business named
       // `business_name` — see app/api/v1/auth.py::signup.
       await apiFetch<{ user: SessionUser }>("/auth/signup", { method: "POST", json: values });
-      router.push("/dashboard");
+      router.push("/onboarding?step=1");
       router.refresh();
     } catch (error) {
       if (error instanceof ApiError && error.status === 202) {

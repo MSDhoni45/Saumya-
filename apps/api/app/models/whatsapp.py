@@ -24,6 +24,7 @@ class Business(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     industry: Mapped[str | None] = mapped_column(String)
     timezone: Mapped[str] = mapped_column(String, nullable=False, default="UTC")
+    onboarding_completed: Mapped[bool] = mapped_column(nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, server_default=func.now())
 
