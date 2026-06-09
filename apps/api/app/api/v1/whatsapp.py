@@ -1,9 +1,10 @@
+import math
 import uuid
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import BusinessContext, get_current_business, require_business_access
@@ -14,6 +15,7 @@ from app.schemas.whatsapp import (
     ConversationResponse,
     ConversationUpdateRequest,
     MessageResponse,
+    PaginatedConversations,
     SendMessageRequest,
     SendMessageResponse,
     WhatsAppAccountConnectRequest,
@@ -151,12 +153,19 @@ async def send_message(
     return SendMessageResponse(message_id=message.id, whatsapp_message_id=whatsapp_message_id, status=message.status)
 
 
-@router.get("/{business_id}/conversations", response_model=list[ConversationResponse])
+_CONV_MAX_PAGE_SIZE = 100
+_CONV_DEFAULT_PAGE_SIZE = 25
+
+
+@router.get("/{business_id}/conversations", response_model=PaginatedConversations)
 async def list_conversations(
     business_id: uuid.UUID,
+    status_filter: str | None = Query(None, alias="status", description="Comma-separated status values, e.g. open,pending"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(_CONV_DEFAULT_PAGE_SIZE, ge=1, le=_CONV_MAX_PAGE_SIZE),
     ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
-) -> list[ConversationResponse]:
+) -> PaginatedConversations:
     require_business_access(ctx, business_id)
     last_content_subq = (
         select(Message.content)
@@ -175,6 +184,15 @@ async def list_conversations(
         .scalar_subquery()
     )
 
+    base = select(Conversation).where(Conversation.business_id == business_id)
+    if status_filter:
+        statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
+        if statuses:
+            base = base.where(Conversation.status.in_(statuses))
+
+    count_stmt = select(func.count()).select_from(base.subquery())
+    total: int = (await session.execute(count_stmt)).scalar_one()
+
     stmt = (
         select(
             Conversation,
@@ -183,16 +201,30 @@ async def list_conversations(
         )
         .where(Conversation.business_id == business_id)
         .order_by(Conversation.last_message_at.desc().nulls_last())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
     )
+    if status_filter:
+        statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
+        if statuses:
+            stmt = stmt.where(Conversation.status.in_(statuses))
+
     rows = (await session.execute(stmt)).all()
 
-    responses: list[ConversationResponse] = []
+    items: list[ConversationResponse] = []
     for row in rows:
         resp = ConversationResponse.model_validate(row.Conversation)
         resp.last_message_content = row.last_message_content
         resp.last_sender_type = row.last_sender_type
-        responses.append(resp)
-    return responses
+        items.append(resp)
+
+    return PaginatedConversations(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=max(1, math.ceil(total / page_size)),
+    )
 
 
 @router.patch("/{business_id}/conversations/{conversation_id}", response_model=ConversationResponse)
@@ -255,6 +287,8 @@ async def stream_conversation_messages(
 async def list_messages(
     business_id: uuid.UUID,
     conversation_id: uuid.UUID,
+    limit: int = Query(50, ge=1, le=200, description="Number of messages to return"),
+    before_id: uuid.UUID | None = Query(None, description="Return messages older than this message ID"),
     ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[Message]:
@@ -263,9 +297,17 @@ async def list_messages(
     if conversation is None or conversation.business_id != business_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Conversation not found")
 
-    stmt = select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.asc())
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
+    stmt = select(Message).where(Message.conversation_id == conversation_id)
+
+    if before_id is not None:
+        anchor = await session.get(Message, before_id)
+        if anchor is not None:
+            stmt = stmt.where(Message.created_at < anchor.created_at)
+
+    stmt = stmt.order_by(Message.created_at.desc()).limit(limit)
+    rows = list((await session.execute(stmt)).scalars().all())
+    # Return in ascending order so the UI can append naturally
+    return list(reversed(rows))
 
 
 # --- Helpers -------------------------------------------------------------------

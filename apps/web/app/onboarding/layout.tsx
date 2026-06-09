@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { ErrorBoundary } from "@/components/error-boundary";
 import { getSession } from "@/lib/auth/session";
 
 export const metadata = { title: "Get started — WhatsAgent AI" };
@@ -27,7 +28,9 @@ export default async function OnboardingLayout({ children }: { children: React.R
 
       {/* Content */}
       <main className="flex flex-1 flex-col px-4 py-10">
-        <div className="mx-auto w-full max-w-3xl flex-1">{children}</div>
+        <div className="mx-auto w-full max-w-3xl flex-1">
+          <ErrorBoundary>{children}</ErrorBoundary>
+        </div>
       </main>
     </div>
   );

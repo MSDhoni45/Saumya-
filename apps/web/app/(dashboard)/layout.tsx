@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { ErrorBoundary } from "@/components/error-boundary";
 import { roleLabel } from "@/lib/auth/rbac";
 import { getSession } from "@/lib/auth/session";
 import { SignOutButton } from "@/components/auth/sign-out-button";
@@ -52,7 +53,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
           stretched to their content's height by the flex column. Ordinary
           content pages apply their own max-width/padding and simply scroll
           within this region. */}
-      <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
+      <main className="min-h-0 flex-1 overflow-y-auto">
+        <ErrorBoundary>{children}</ErrorBoundary>
+      </main>
     </div>
   );
 }

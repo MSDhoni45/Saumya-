@@ -81,6 +81,14 @@ class ConversationResponse(BaseModel):
     last_sender_type: str | None = None
 
 
+class PaginatedConversations(BaseModel):
+    items: list[ConversationResponse]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
 class ConversationUpdateRequest(BaseModel):
     """Partial update for human takeover / hand-back / reassignment.
 

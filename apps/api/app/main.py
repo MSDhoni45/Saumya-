@@ -1,5 +1,3 @@
-import logging
-
 import sentry_sdk
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,9 +12,10 @@ from app.api.v1.knowledge import router as knowledge_api_router
 from app.api.v1.leads import router as leads_api_router
 from app.api.v1.whatsapp import router as whatsapp_api_router
 from app.core.config import settings
+from app.core.logging import configure_logging
 from app.webhooks.whatsapp import router as whatsapp_webhook_router
 
-logging.basicConfig(level=logging.INFO if not settings.debug else logging.DEBUG)
+configure_logging(debug=settings.debug, environment=settings.environment)
 
 # Maximum request body size accepted by the API (10 MB). Keeps the webhook
 # handler safe from oversized Meta payloads that could exhaust memory.

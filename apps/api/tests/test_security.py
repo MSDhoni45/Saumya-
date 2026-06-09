@@ -1,0 +1,122 @@
+"""Unit tests for app/core/security.py — pure functions, no HTTP or DB."""
+
+import hashlib
+import hmac
+from unittest.mock import MagicMock, patch
+
+import jwt
+import pytest
+
+from app.core.config import settings
+from app.core.security import (
+    TokenClaims,
+    TokenError,
+    decode_access_token,
+    verify_whatsapp_webhook_handshake,
+    verify_whatsapp_webhook_signature,
+)
+
+
+# ---------------------------------------------------------------------------
+# decode_access_token
+# ---------------------------------------------------------------------------
+
+
+def _make_signing_key_mock(payload: dict) -> MagicMock:
+    """Return a mock that mimics PyJWKClient.get_signing_key_from_jwt."""
+    key_mock = MagicMock()
+    key_mock.key = "test-secret"
+    return key_mock
+
+
+def test_decode_access_token_returns_claims():
+    claims_payload = {"sub": "user-uuid-123", "email": "dev@example.com"}
+    with (
+        patch("app.core.security._jwks_client") as mock_client_fn,
+        patch("jwt.decode", return_value=claims_payload),
+    ):
+        mock_client_fn.return_value.get_signing_key_from_jwt.return_value = _make_signing_key_mock(claims_payload)
+        result = decode_access_token("any.token.here")
+
+    assert isinstance(result, TokenClaims)
+    assert result.user_id == "user-uuid-123"
+    assert result.email == "dev@example.com"
+
+
+def test_decode_access_token_missing_sub_raises():
+    with (
+        patch("app.core.security._jwks_client") as mock_client_fn,
+        patch("jwt.decode", return_value={"email": "x@y.com"}),
+    ):
+        mock_client_fn.return_value.get_signing_key_from_jwt.return_value = _make_signing_key_mock({})
+        with pytest.raises(TokenError, match="sub"):
+            decode_access_token("any.token.here")
+
+
+def test_decode_access_token_expired_raises():
+    with (
+        patch("app.core.security._jwks_client") as mock_client_fn,
+        patch("jwt.decode", side_effect=jwt.ExpiredSignatureError("expired")),
+    ):
+        mock_client_fn.return_value.get_signing_key_from_jwt.return_value = _make_signing_key_mock({})
+        with pytest.raises(TokenError):
+            decode_access_token("any.token.here")
+
+
+# ---------------------------------------------------------------------------
+# verify_whatsapp_webhook_signature
+# ---------------------------------------------------------------------------
+
+
+def _make_signature(body: bytes, secret: str) -> str:
+    digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return f"sha256={digest}"
+
+
+def test_valid_webhook_signature_accepted():
+    body = b'{"object":"test"}'
+    sig = _make_signature(body, settings.whatsapp_app_secret)
+    assert verify_whatsapp_webhook_signature(body, sig) is True
+
+
+def test_tampered_body_rejected():
+    body = b'{"object":"test"}'
+    sig = _make_signature(body, settings.whatsapp_app_secret)
+    assert verify_whatsapp_webhook_signature(b'{"object":"tampered"}', sig) is False
+
+
+def test_wrong_secret_rejected():
+    body = b'{"object":"test"}'
+    sig = _make_signature(body, "wrong-secret")
+    assert verify_whatsapp_webhook_signature(body, sig) is False
+
+
+def test_missing_signature_header_rejected():
+    assert verify_whatsapp_webhook_signature(b"body", None) is False
+
+
+def test_malformed_signature_prefix_rejected():
+    body = b"body"
+    bad_sig = "md5=" + hmac.new(settings.whatsapp_app_secret.encode(), body, hashlib.sha256).hexdigest()
+    assert verify_whatsapp_webhook_signature(body, bad_sig) is False
+
+
+# ---------------------------------------------------------------------------
+# verify_whatsapp_webhook_handshake
+# ---------------------------------------------------------------------------
+
+
+def test_valid_handshake_accepted():
+    assert verify_whatsapp_webhook_handshake("subscribe", settings.whatsapp_webhook_verify_token) is True
+
+
+def test_wrong_mode_rejected():
+    assert verify_whatsapp_webhook_handshake("unsubscribe", settings.whatsapp_webhook_verify_token) is False
+
+
+def test_wrong_token_rejected():
+    assert verify_whatsapp_webhook_handshake("subscribe", "wrong-token") is False
+
+
+def test_none_inputs_rejected():
+    assert verify_whatsapp_webhook_handshake(None, None) is False
