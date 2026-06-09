@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import BusinessContext, get_current_business, require_business_access
 from app.core.config import settings
 from app.db.session import get_db_session
 from app.models.whatsapp import Conversation, Message, WhatsAppAccount
@@ -25,22 +26,18 @@ from app.services.whatsapp_client import WhatsAppApiError, WhatsAppClient
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
-# NOTE: `business_id` below stands in for the `OrganizationContext` dependency
-# (`get_current_organization`) defined in the auth module — these endpoints are
-# `member`/`admin` gated per `07-api-endpoints-reference.md`. Wired here as a
-# plain UUID path/body value to keep this module independently reviewable; swap
-# for the real dependency when the auth module lands.
-
 
 @router.post("/{business_id}/connect", response_model=WhatsAppAccountResponse, status_code=status.HTTP_201_CREATED)
 async def connect_whatsapp_account(
     business_id: uuid.UUID,
     payload: WhatsAppAccountConnectRequest,
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> WhatsAppAccount:
     """Connect a WhatsApp Business number: validate the token against the Graph
     API, persist the (encrypted) credentials, and mark the account connected.
     """
+    require_business_access(ctx, business_id)
     phone_number = await _fetch_and_verify_phone_number(payload.phone_number_id, payload.access_token)
 
     account = WhatsAppAccount(
@@ -61,8 +58,11 @@ async def connect_whatsapp_account(
 
 @router.get("/{business_id}/accounts", response_model=list[WhatsAppAccountResponse])
 async def list_whatsapp_accounts(
-    business_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)
+    business_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
+    session: AsyncSession = Depends(get_db_session),
 ) -> list[WhatsAppAccount]:
+    require_business_access(ctx, business_id)
     stmt = select(WhatsAppAccount).where(WhatsAppAccount.business_id == business_id)
     result = await session.execute(stmt)
     return list(result.scalars().all())
@@ -70,8 +70,12 @@ async def list_whatsapp_accounts(
 
 @router.post("/{business_id}/accounts/{account_id}/disconnect", response_model=WhatsAppAccountResponse)
 async def disconnect_whatsapp_account(
-    business_id: uuid.UUID, account_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)
+    business_id: uuid.UUID,
+    account_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
+    session: AsyncSession = Depends(get_db_session),
 ) -> WhatsAppAccount:
+    require_business_access(ctx, business_id)
     account = await _get_account_or_404(session, business_id, account_id)
     account.status = "disconnected"
     account.access_token = None
@@ -89,6 +93,7 @@ async def send_message(
     business_id: uuid.UUID,
     account_id: uuid.UUID,
     payload: SendMessageRequest,
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> SendMessageResponse:
     """Send an outbound message through a connected number and persist it.
@@ -96,6 +101,7 @@ async def send_message(
     Conversations are looked up by `(account_id, to)` — sending to a brand-new
     number is allowed (e.g. proactive outreach) and creates the thread.
     """
+    require_business_access(ctx, business_id)
     account = await _get_account_or_404(session, business_id, account_id)
     if account.status != "connected" or not account.access_token:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="WhatsApp account is not connected")
@@ -137,14 +143,9 @@ async def send_message(
         whatsapp_message_id=whatsapp_message_id,
     )
 
-    # Flush so the message has DB-assigned fields (id, created_at) before we
-    # serialize it for the SSE broadcast below.
     await session.flush()
     await session.refresh(message)
 
-    # Notify any open SSE stream for this thread — this is best-effort (see
-    # publish_new_message's error-swallowing contract), so we fire it before the
-    # HTTP response but after the DB flush so consumers see a committed row.
     await publish_new_message(str(conversation.id), MessageResponse.model_validate(message).model_dump(mode="json"))
 
     return SendMessageResponse(message_id=message.id, whatsapp_message_id=whatsapp_message_id, status=message.status)
@@ -152,10 +153,11 @@ async def send_message(
 
 @router.get("/{business_id}/conversations", response_model=list[ConversationResponse])
 async def list_conversations(
-    business_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)
+    business_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
+    session: AsyncSession = Depends(get_db_session),
 ) -> list[ConversationResponse]:
-    # Correlated subqueries pull the most-recent message's content and sender
-    # type for each conversation in a single round-trip rather than N+1 queries.
+    require_business_access(ctx, business_id)
     last_content_subq = (
         select(Message.content)
         .where(Message.conversation_id == Conversation.id)
@@ -198,6 +200,7 @@ async def update_conversation(
     business_id: uuid.UUID,
     conversation_id: uuid.UUID,
     payload: ConversationUpdateRequest,
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> Conversation:
     """Update a conversation's status and/or assignment.
@@ -208,6 +211,7 @@ async def update_conversation(
     touched when the client explicitly includes it (so a status-only update
     can't accidentally clear an existing assignment) — `None` clears it.
     """
+    require_business_access(ctx, business_id)
     conversation = await session.get(Conversation, conversation_id)
     if conversation is None or conversation.business_id != business_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Conversation not found")
@@ -227,15 +231,11 @@ async def update_conversation(
 async def stream_conversation_messages(
     business_id: uuid.UUID,
     conversation_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> StreamingResponse:
-    """Server-Sent Events stream for real-time message delivery.
-
-    The browser connects once per open conversation thread; new messages arrive
-    as `data:` lines (JSON-encoded MessageResponse) without the overhead of
-    polling. Falls back to the polling layer automatically if the connection
-    drops — see `useMessageStream` in the frontend.
-    """
+    """Server-Sent Events stream for real-time message delivery."""
+    require_business_access(ctx, business_id)
     conversation = await session.get(Conversation, conversation_id)
     if conversation is None or conversation.business_id != business_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Conversation not found")
@@ -245,7 +245,7 @@ async def stream_conversation_messages(
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",  # Disable nginx buffering for streaming
+            "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
         },
     )
@@ -253,8 +253,12 @@ async def stream_conversation_messages(
 
 @router.get("/{business_id}/conversations/{conversation_id}/messages", response_model=list[MessageResponse])
 async def list_messages(
-    business_id: uuid.UUID, conversation_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)
+    business_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
+    session: AsyncSession = Depends(get_db_session),
 ) -> list[Message]:
+    require_business_access(ctx, business_id)
     conversation = await session.get(Conversation, conversation_id)
     if conversation is None or conversation.business_id != business_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Conversation not found")

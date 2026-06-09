@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import BusinessContext, get_current_business, require_business_access
 from app.db.session import get_db_session
 from app.models.agent import Lead, LeadEvent, LeadNote
 from app.schemas.leads import (
@@ -36,12 +37,13 @@ async def list_leads(
     stage: str | None = Query(None, description="Comma-separated stage values, e.g. new,contacted"),
     source: str | None = Query(None, description="Comma-separated source values"),
     assigned: str | None = Query("all", description="all | me | unassigned"),
-    me: uuid.UUID | None = Query(None, description="Caller's user ID — required when assigned=me"),
     sort: str = Query("updated_desc", description="updated_desc | created_asc | stage_asc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(_DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE),
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> PaginatedLeads:
+    require_business_access(ctx, business_id)
     stmt = select(Lead).where(Lead.business_id == business_id)
 
     # --- Search ---
@@ -67,9 +69,9 @@ async def list_leads(
         if sources:
             stmt = stmt.where(Lead.source.in_(sources))
 
-    # --- Assignment filter ---
-    if assigned == "me" and me:
-        stmt = stmt.where(Lead.assigned_user_id == me)
+    # --- Assignment filter — "me" uses the authenticated user's ID ---
+    if assigned == "me":
+        stmt = stmt.where(Lead.assigned_user_id == ctx.user_id)
     elif assigned == "unassigned":
         stmt = stmt.where(Lead.assigned_user_id.is_(None))
 
@@ -108,8 +110,10 @@ async def list_leads(
 async def get_lead(
     business_id: uuid.UUID,
     lead_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> LeadResponse:
+    require_business_access(ctx, business_id)
     lead = await _get_lead_or_404(session, business_id, lead_id)
     return LeadResponse.model_validate(lead)
 
@@ -124,7 +128,7 @@ async def update_lead(
     business_id: uuid.UUID,
     lead_id: uuid.UUID,
     payload: LeadUpdateRequest,
-    actor_id: uuid.UUID | None = Query(None, description="ID of the user making the change"),
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> LeadResponse:
     """Partial update for stage transitions, field edits, and assignment changes.
@@ -132,6 +136,7 @@ async def update_lead(
     Writes a `LeadEvent` for every meaningful change so the timeline stays
     accurate. Stage changes also update `stage_changed_at`.
     """
+    require_business_access(ctx, business_id)
     lead = await _get_lead_or_404(session, business_id, lead_id)
     fields_set = payload.model_fields_set
     events_to_write: list[dict[str, Any]] = []
@@ -174,7 +179,7 @@ async def update_lead(
             LeadEvent(
                 lead_id=lead.id,
                 business_id=business_id,
-                actor_id=actor_id,
+                actor_id=ctx.user_id,
                 **event_data,
             )
         )
@@ -193,8 +198,10 @@ async def update_lead(
 async def get_lead_timeline(
     business_id: uuid.UUID,
     lead_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> LeadTimelineResponse:
+    require_business_access(ctx, business_id)
     await _get_lead_or_404(session, business_id, lead_id)
 
     events_stmt = (
@@ -227,34 +234,32 @@ async def add_note(
     business_id: uuid.UUID,
     lead_id: uuid.UUID,
     payload: AddNoteRequest,
-    author_id: uuid.UUID | None = Query(None, description="ID of the agent writing the note"),
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> LeadNoteResponse:
+    require_business_access(ctx, business_id)
     lead = await _get_lead_or_404(session, business_id, lead_id)
 
     note = LeadNote(
         lead_id=lead.id,
         business_id=business_id,
-        author_id=author_id,
+        author_id=ctx.user_id,
         content=payload.content,
     )
     session.add(note)
     await session.flush()
 
-    # Write timeline event with a short preview so the event stream is readable
-    # without joining back to the notes table.
     preview = payload.content[:120] + ("…" if len(payload.content) > 120 else "")
     session.add(
         LeadEvent(
             lead_id=lead.id,
             business_id=business_id,
-            actor_id=author_id,
+            actor_id=ctx.user_id,
             event_type="note_added",
             payload={"note_id": str(note.id), "preview": preview},
         )
     )
 
-    # Bump lead.updated_at so it bubbles to the top of the default sort.
     lead.updated_at = datetime.now(tz=timezone.utc)
 
     await session.flush()
@@ -267,9 +272,10 @@ async def delete_note(
     business_id: uuid.UUID,
     lead_id: uuid.UUID,
     note_id: uuid.UUID,
-    actor_id: uuid.UUID | None = Query(None),
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
+    require_business_access(ctx, business_id)
     await _get_lead_or_404(session, business_id, lead_id)
 
     note = await session.get(LeadNote, note_id)
@@ -281,7 +287,7 @@ async def delete_note(
         LeadEvent(
             lead_id=lead_id,
             business_id=business_id,
-            actor_id=actor_id,
+            actor_id=ctx.user_id,
             event_type="note_deleted",
             payload={"content_preview": preview},
         )

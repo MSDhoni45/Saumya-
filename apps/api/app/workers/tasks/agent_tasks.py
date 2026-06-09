@@ -17,6 +17,19 @@ logger = logging.getLogger(__name__)
 # Recent turns fed to the LLM as conversation history (oldest first).
 _HISTORY_LIMIT = 20
 
+# Persistent event loop reused across tasks in the same worker process.
+# Creating a new loop per task via asyncio.run() has overhead from loop setup
+# and teardown; reusing the process-local loop is significantly faster.
+_worker_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _get_worker_loop() -> asyncio.AbstractEventLoop:
+    global _worker_loop
+    if _worker_loop is None or _worker_loop.is_closed():
+        _worker_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_worker_loop)
+    return _worker_loop
+
 
 @celery_app.task(name="agent.generate_and_send_reply", bind=True, max_retries=3, default_retry_delay=10)
 def generate_and_send_reply(self, *, conversation_id: str, inbound_message_id: str) -> None:
@@ -27,7 +40,9 @@ def generate_and_send_reply(self, *, conversation_id: str, inbound_message_id: s
     unhealthy and disabling the subscription.
     """
     try:
-        asyncio.run(_generate_and_send_reply(uuid.UUID(conversation_id), uuid.UUID(inbound_message_id)))
+        _get_worker_loop().run_until_complete(
+            _generate_and_send_reply(uuid.UUID(conversation_id), uuid.UUID(inbound_message_id))
+        )
     except Exception as exc:  # noqa: BLE001 - retry on anything transient; Celery logs the traceback
         logger.exception(
             "Agent reply generation failed for conversation_id=%s inbound_message_id=%s",

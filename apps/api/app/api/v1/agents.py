@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import BusinessContext, get_current_business, require_business_access
 from app.db.session import get_db_session
 from app.models.agent import AiAgent, AiInteraction
 from app.schemas.agent import (
@@ -26,17 +27,15 @@ _DEFAULT_PERSONA = (
     "and never invent facts about the business."
 )
 
-# NOTE: `business_id` stands in for the `OrganizationContext` dependency
-# (`get_current_organization`) from the auth module — see app/api/v1/whatsapp.py
-# for the same placeholder pattern; swap once that module lands.
-
 
 @router.post("/{business_id}", response_model=AiAgentResponse, status_code=status.HTTP_201_CREATED)
 async def create_agent(
     business_id: uuid.UUID,
     payload: AiAgentCreateRequest,
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> AiAgent:
+    require_business_access(ctx, business_id)
     agent = AiAgent(
         business_id=business_id,
         name=payload.name,
@@ -55,15 +54,24 @@ async def create_agent(
 
 
 @router.get("/{business_id}", response_model=list[AiAgentResponse])
-async def list_agents(business_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)) -> list[AiAgent]:
+async def list_agents(
+    business_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[AiAgent]:
+    require_business_access(ctx, business_id)
     stmt = select(AiAgent).where(AiAgent.business_id == business_id).order_by(AiAgent.created_at)
     return list((await session.execute(stmt)).scalars().all())
 
 
 @router.get("/{business_id}/{agent_id}", response_model=AiAgentResponse)
 async def get_agent(
-    business_id: uuid.UUID, agent_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)
+    business_id: uuid.UUID,
+    agent_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
+    session: AsyncSession = Depends(get_db_session),
 ) -> AiAgent:
+    require_business_access(ctx, business_id)
     return await _get_agent_or_404(session, business_id, agent_id)
 
 
@@ -72,8 +80,10 @@ async def update_agent(
     business_id: uuid.UUID,
     agent_id: uuid.UUID,
     payload: AiAgentUpdateRequest,
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> AiAgent:
+    require_business_access(ctx, business_id)
     agent = await _get_agent_or_404(session, business_id, agent_id)
 
     updates = payload.model_dump(exclude_unset=True)
@@ -88,15 +98,25 @@ async def update_agent(
 
 
 @router.delete("/{business_id}/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_agent(business_id: uuid.UUID, agent_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)) -> None:
+async def delete_agent(
+    business_id: uuid.UUID,
+    agent_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
+    session: AsyncSession = Depends(get_db_session),
+) -> None:
+    require_business_access(ctx, business_id)
     agent = await _get_agent_or_404(session, business_id, agent_id)
     await session.delete(agent)
 
 
 @router.get("/{business_id}/{agent_id}/interactions", response_model=list[AiInteractionResponse])
 async def list_agent_interactions(
-    business_id: uuid.UUID, agent_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)
+    business_id: uuid.UUID,
+    agent_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
+    session: AsyncSession = Depends(get_db_session),
 ) -> list[AiInteraction]:
+    require_business_access(ctx, business_id)
     await _get_agent_or_404(session, business_id, agent_id)
     stmt = (
         select(AiInteraction)
@@ -112,12 +132,14 @@ async def test_agent(
     business_id: uuid.UUID,
     agent_id: uuid.UUID,
     payload: AgentTestRequest,
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> AgentTestResponse:
     """Sandbox endpoint: run a single turn against the agent without touching
     real conversations/leads/WhatsApp — lets a business owner tune persona,
     qualification fields, and knowledge base before going live.
     """
+    require_business_access(ctx, business_id)
     agent = await _get_agent_or_404(session, business_id, agent_id)
 
     qualification_fields: list[dict] = list(agent.qualification_fields or [])

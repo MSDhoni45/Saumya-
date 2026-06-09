@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.params import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import BusinessContext, get_current_business, require_business_access
 from app.db.session import get_db_session
 from app.models.whatsapp import Business
 from app.schemas.business import BusinessResponse, BusinessUpdateRequest
@@ -15,8 +16,10 @@ router = APIRouter(prefix="/business", tags=["business"])
 @router.get("/{business_id}", response_model=BusinessResponse)
 async def get_business(
     business_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> Business:
+    require_business_access(ctx, business_id)
     business = await session.get(Business, business_id)
     if business is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Business not found")
@@ -27,8 +30,10 @@ async def get_business(
 async def update_business(
     business_id: uuid.UUID,
     payload: BusinessUpdateRequest,
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> Business:
+    require_business_access(ctx, business_id)
     business = await session.get(Business, business_id)
     if business is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Business not found")

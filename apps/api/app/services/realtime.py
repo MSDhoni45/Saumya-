@@ -25,6 +25,18 @@ from app.core.config import settings
 _KEEPALIVE_SECONDS = 25.0
 _POLL_TIMEOUT = 1.0
 
+# Shared connection pool — reused across all publish calls and SSE streams.
+# redis-py's `from_url` creates a connection pool internally; calling it once
+# and holding the reference avoids creating/destroying a connection per request.
+_redis: aioredis.Redis | None = None
+
+
+def _get_redis() -> aioredis.Redis:
+    global _redis
+    if _redis is None:
+        _redis = aioredis.from_url(settings.redis_url, decode_responses=True, max_connections=50)
+    return _redis
+
 
 async def publish_new_message(conversation_id: str, message_data: dict) -> None:
     """Publish a serialised MessageResponse to the conversation's channel.
@@ -32,14 +44,10 @@ async def publish_new_message(conversation_id: str, message_data: dict) -> None:
     Swallows all errors — a Redis outage must never break the HTTP response
     that triggered the publish (webhook 200, agent send 201, etc.).
     """
-    r = aioredis.from_url(settings.redis_url, decode_responses=True)
     try:
-        await r.publish(f"conv:{conversation_id}:msg", json.dumps(message_data))
+        await _get_redis().publish(f"conv:{conversation_id}:msg", json.dumps(message_data))
     except Exception:  # noqa: BLE001
         pass
-    finally:
-        with contextlib.suppress(Exception):
-            await r.aclose()
 
 
 async def stream_conversation(conversation_id: str) -> AsyncGenerator[str, None]:
@@ -49,8 +57,7 @@ async def stream_conversation(conversation_id: str) -> AsyncGenerator[str, None]
     shape as the REST endpoint). Comment lines (`:`...) are keepalive pings that
     prevent proxy/CDN timeouts; the browser's EventSource ignores them.
     """
-    r = aioredis.from_url(settings.redis_url, decode_responses=True)
-    pubsub = r.pubsub()
+    pubsub = _get_redis().pubsub()
     channel = f"conv:{conversation_id}:msg"
     await pubsub.subscribe(channel)
 
@@ -72,4 +79,3 @@ async def stream_conversation(conversation_id: str) -> AsyncGenerator[str, None]
         with contextlib.suppress(Exception):
             await pubsub.unsubscribe(channel)
             await pubsub.aclose()
-            await r.aclose()

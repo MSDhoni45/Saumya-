@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.config import settings
+from app.core.rate_limit import rate_limit
 from app.db.session import get_db_session
 from app.models.user import User
 from app.models.whatsapp import Business
@@ -71,7 +72,12 @@ def _session_response(gotrue_session: GoTrueSession, user: User) -> SessionRespo
 
 
 @router.post("/signup", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
-async def signup(payload: SignupRequest, response: Response, session: AsyncSession = Depends(get_db_session)) -> SessionResponse:
+async def signup(
+    payload: SignupRequest,
+    response: Response,
+    session: AsyncSession = Depends(get_db_session),
+    _rl: None = rate_limit(max_requests=5, window_seconds=60),
+) -> SessionResponse:
     """Create an account, sign the user in, and bootstrap their business.
 
     The new user becomes `business_admin` of a freshly created business named
@@ -102,7 +108,12 @@ async def signup(payload: SignupRequest, response: Response, session: AsyncSessi
 
 
 @router.post("/login", response_model=SessionResponse)
-async def login(payload: LoginRequest, response: Response, session: AsyncSession = Depends(get_db_session)) -> SessionResponse:
+async def login(
+    payload: LoginRequest,
+    response: Response,
+    session: AsyncSession = Depends(get_db_session),
+    _rl: None = rate_limit(max_requests=10, window_seconds=60),
+) -> SessionResponse:
     try:
         gotrue_session = await auth_service.sign_in_with_password(email=payload.email, password=payload.password)
     except GoTrueError as exc:
@@ -156,7 +167,10 @@ async def logout(response: Response, current_user: User = Depends(get_current_us
 
 
 @router.post("/forgot-password", response_model=MessageResponse)
-async def forgot_password(payload: ForgotPasswordRequest) -> MessageResponse:
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    _rl: None = rate_limit(max_requests=3, window_seconds=300),
+) -> MessageResponse:
     """Always returns success — never reveal whether an email is registered."""
     try:
         await auth_service.send_password_recovery_email(email=payload.email, redirect_to=payload.redirect_to)

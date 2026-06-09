@@ -56,6 +56,7 @@ async def get_current_user(
 
 @dataclass(frozen=True, slots=True)
 class BusinessContext:
+    user_id: uuid.UUID
     business_id: uuid.UUID
     role: UserRole
 
@@ -78,7 +79,13 @@ async def get_current_business(current_user: User = Depends(get_current_user)) -
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This account is not attached to a business yet",
         )
-    return BusinessContext(business_id=current_user.business_id, role=current_user.role)
+    return BusinessContext(user_id=current_user.id, business_id=current_user.business_id, role=current_user.role)
+
+
+def require_business_access(ctx: BusinessContext, business_id: uuid.UUID) -> None:
+    """Raise 403 if the authenticated user's business doesn't match the path parameter."""
+    if ctx.business_id != business_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
 def require_roles(*roles: UserRole) -> Callable[[User], Awaitable[User]]:

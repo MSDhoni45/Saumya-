@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.api.deps import BusinessContext, get_current_business, require_business_access
 from app.db.session import get_db_session
 from app.models.agent import Document, KnowledgeBase
 from app.schemas.knowledge import (
@@ -21,8 +22,10 @@ router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 @router.get("/{business_id}", response_model=list[KnowledgeBaseResponse])
 async def list_knowledge_bases(
     business_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[KnowledgeBase]:
+    require_business_access(ctx, business_id)
     stmt = (
         select(KnowledgeBase)
         .where(KnowledgeBase.business_id == business_id)
@@ -36,8 +39,10 @@ async def list_knowledge_bases(
 async def create_knowledge_base(
     business_id: uuid.UUID,
     payload: CreateKbRequest,
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> KnowledgeBase:
+    require_business_access(ctx, business_id)
     kb = KnowledgeBase(business_id=business_id, name=payload.name, description=payload.description)
     session.add(kb)
     await session.flush()
@@ -49,8 +54,10 @@ async def create_knowledge_base(
 async def get_knowledge_base(
     business_id: uuid.UUID,
     kb_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> KnowledgeBase:
+    require_business_access(ctx, business_id)
     return await _get_kb_or_404(session, business_id, kb_id)
 
 
@@ -59,8 +66,10 @@ async def add_document(
     business_id: uuid.UUID,
     kb_id: uuid.UUID,
     payload: AddDocumentRequest,
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> Document:
+    require_business_access(ctx, business_id)
     await _get_kb_or_404(session, business_id, kb_id)
 
     doc = Document(
@@ -75,6 +84,12 @@ async def add_document(
     session.add(doc)
     await session.flush()
     await session.refresh(doc)
+
+    # Enqueue embedding generation — runs asynchronously so the HTTP response
+    # is immediate; the document's `status` transitions pending → processing → ready.
+    from app.workers.tasks.knowledge_tasks import embed_document
+    embed_document.delay(document_id=str(doc.id))
+
     return doc
 
 
@@ -83,8 +98,10 @@ async def delete_document(
     business_id: uuid.UUID,
     kb_id: uuid.UUID,
     doc_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
+    require_business_access(ctx, business_id)
     doc = await session.get(Document, doc_id)
     if doc is None or doc.knowledge_base_id != kb_id or doc.business_id != business_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
