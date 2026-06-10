@@ -9,6 +9,7 @@ Usage in a route:
 """
 
 import time
+import uuid
 
 import redis.asyncio as aioredis
 from fastapi import Depends, HTTPException, Request, status
@@ -16,6 +17,26 @@ from fastapi import Depends, HTTPException, Request, status
 from app.core.config import settings
 
 _redis: aioredis.Redis | None = None
+
+# Atomic check-and-record: prune the window, count, and only record the
+# request if it's under the limit — all in one server-side step. A plain
+# MULTI/EXEC pipeline can't do this because the zadd-then-count ordering
+# always records rejected requests too, letting a sustained burst extend
+# its own ban window indefinitely and inflate the set.
+#
+# KEYS[1] = window key
+# ARGV    = window_start, now, max_requests, ttl_seconds, member
+# Returns 1 if allowed, 0 if rate-limited.
+_SLIDING_WINDOW_LUA = """
+redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, ARGV[1])
+local count = redis.call('ZCARD', KEYS[1])
+if count >= tonumber(ARGV[3]) then
+    return 0
+end
+redis.call('ZADD', KEYS[1], ARGV[2], ARGV[5])
+redis.call('EXPIRE', KEYS[1], ARGV[4])
+return 1
+"""
 
 
 def _get_redis() -> aioredis.Redis:
@@ -34,15 +55,17 @@ def rate_limit(max_requests: int, window_seconds: int):
         now = time.time()
         window_start = now - window_seconds
 
-        pipe = _get_redis().pipeline()
-        pipe.zremrangebyscore(key, 0, window_start)
-        pipe.zadd(key, {f"{now}:{id(object())}": now})
-        pipe.zcard(key)
-        pipe.expire(key, window_seconds + 1)
-        results = await pipe.execute()
-
-        count: int = results[2]
-        if count > max_requests:
+        allowed = await _get_redis().eval(  # type: ignore[misc]
+            _SLIDING_WINDOW_LUA,
+            1,
+            key,
+            str(window_start),
+            str(now),
+            str(max_requests),
+            str(window_seconds + 1),
+            f"{now}:{uuid.uuid4().hex}",
+        )
+        if not allowed:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many requests — please try again later.",
