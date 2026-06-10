@@ -1,0 +1,26 @@
+# Build context is the repo root (apps/api/Dockerfile). Keep the context lean:
+# only apps/api/{requirements.txt,app,docker-entrypoint.sh} and
+# supabase/migrations are copied into the image.
+.git/
+.github/
+infra/
+apps/web/
+docs/
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/dist/
+**/build/
+**/.venv/
+**/venv/
+**/.env
+**/.env.*
+!**/.env.example
+apps/api/tests/
+**/*.log
+**/celerybeat-schedule
+**/celerybeat.pid
+docker-compose.yml

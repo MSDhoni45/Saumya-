@@ -7,8 +7,8 @@ version: "3.9"
 services:
   api:
     build:
-      context: apps/api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/api/Dockerfile
     command:
       - uvicorn
       - app.main:app
@@ -19,6 +19,8 @@ services:
       - --reload
     ports:
       - "8000:8000"
+    environment:
+      RUN_MIGRATIONS: "1"
     env_file: apps/api/.env
     volumes:
       - ./apps/api/app:/app/app
@@ -29,8 +31,8 @@ services:
 
   worker:
     build:
-      context: apps/api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/api/Dockerfile
     command:
       - celery
       - -A
@@ -50,8 +52,8 @@ services:
 
   beat:
     build:
-      context: apps/api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/api/Dockerfile
     command:
       - celery
       - -A

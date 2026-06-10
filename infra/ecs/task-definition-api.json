@@ -19,7 +19,8 @@
       ],
       "environment": [
         { "name": "ENVIRONMENT", "value": "production" },
-        { "name": "DEBUG", "value": "false" }
+        { "name": "DEBUG", "value": "false" },
+        { "name": "RUN_MIGRATIONS", "value": "1" }
       ],
       "secrets": [
         { "name": "DATABASE_URL",                "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:DATABASE_URL::" },

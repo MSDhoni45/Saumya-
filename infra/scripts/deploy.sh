@@ -38,7 +38,7 @@ echo "==> Building image: ${IMAGE_URI}..."
 docker build \
   -t "${IMAGE_URI}" \
   -t "${ECR_REGISTRY}/${ECR_REPOSITORY}:latest" \
-  apps/api
+  -f apps/api/Dockerfile .
 
 echo "==> Pushing image..."
 docker push "${IMAGE_URI}"
