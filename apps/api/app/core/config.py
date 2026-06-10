@@ -1,5 +1,7 @@
 from functools import lru_cache
 
+from cryptography.fernet import Fernet
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -80,6 +82,25 @@ class Settings(BaseSettings):
 
     # --- Frontend ------------------------------------------------------------
     app_frontend_url: str | None = None
+
+    @field_validator("token_encryption_key")
+    @classmethod
+    def _validate_token_encryption_key(cls, value: str) -> str:
+        """Fail fast at startup if TOKEN_ENCRYPTION_KEY isn't a valid Fernet key.
+
+        Fernet keys are 32 url-safe base64-encoded bytes (44 chars). A bad key
+        would otherwise only surface the first time a token is encrypted/decrypted
+        — i.e. mid-request, in production, against a real OAuth token.
+        """
+        try:
+            Fernet(value.encode("utf-8"))
+        except Exception as exc:
+            raise ValueError(
+                "TOKEN_ENCRYPTION_KEY must be a valid Fernet key — "
+                "32 url-safe base64-encoded bytes (44 characters). "
+                "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+            ) from exc
+        return value
 
     @property
     def whatsapp_graph_api_url(self) -> str:
