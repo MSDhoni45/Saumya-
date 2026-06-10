@@ -1,0 +1,67 @@
+{
+  "family": "whatsagent-api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/whatsagent-ecs-execution-role",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/whatsagent-ecs-task-role",
+  "containerDefinitions": [
+    {
+      "name": "whatsagent-api",
+      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/whatsagent-api:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "ENVIRONMENT", "value": "production" },
+        { "name": "DEBUG", "value": "false" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL",                "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:DATABASE_URL::" },
+        { "name": "REDIS_URL",                   "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:REDIS_URL::" },
+        { "name": "SUPABASE_URL",                "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:SUPABASE_URL::" },
+        { "name": "SUPABASE_JWKS_URL",           "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:SUPABASE_JWKS_URL::" },
+        { "name": "SUPABASE_ANON_KEY",           "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:SUPABASE_ANON_KEY::" },
+        { "name": "SUPABASE_SERVICE_ROLE_KEY",   "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:SUPABASE_SERVICE_ROLE_KEY::" },
+        { "name": "SUPABASE_JWT_ISSUER",         "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:SUPABASE_JWT_ISSUER::" },
+        { "name": "TOKEN_ENCRYPTION_KEY",        "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:TOKEN_ENCRYPTION_KEY::" },
+        { "name": "WHATSAPP_APP_ID",             "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:WHATSAPP_APP_ID::" },
+        { "name": "WHATSAPP_APP_SECRET",         "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:WHATSAPP_APP_SECRET::" },
+        { "name": "WHATSAPP_WEBHOOK_VERIFY_TOKEN", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:WHATSAPP_WEBHOOK_VERIFY_TOKEN::" },
+        { "name": "OPENAI_API_KEY",              "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:OPENAI_API_KEY::" },
+        { "name": "ANTHROPIC_API_KEY",           "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:ANTHROPIC_API_KEY::" },
+        { "name": "STRIPE_SECRET_KEY",           "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:STRIPE_SECRET_KEY::" },
+        { "name": "STRIPE_WEBHOOK_SECRET",       "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:STRIPE_WEBHOOK_SECRET::" },
+        { "name": "RAZORPAY_KEY_ID",             "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:RAZORPAY_KEY_ID::" },
+        { "name": "RAZORPAY_KEY_SECRET",         "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:RAZORPAY_KEY_SECRET::" },
+        { "name": "RAZORPAY_WEBHOOK_SECRET",     "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:RAZORPAY_WEBHOOK_SECRET::" },
+        { "name": "SENTRY_DSN",                  "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:SENTRY_DSN::" },
+        { "name": "SENDGRID_API_KEY",            "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:SENDGRID_API_KEY::" },
+        { "name": "ALLOWED_ORIGINS",             "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:ALLOWED_ORIGINS::" },
+        { "name": "APP_FRONTEND_URL",            "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:APP_FRONTEND_URL::" },
+        { "name": "AUTH_COOKIE_DOMAIN",          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:AUTH_COOKIE_DOMAIN::" }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"],
+        "interval": 30,
+        "timeout": 10,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/whatsagent-api",
+          "awslogs-region": "REGION",
+          "awslogs-stream-prefix": "api"
+        }
+      },
+      "stopTimeout": 30
+    }
+  ]
+}

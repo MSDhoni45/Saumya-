@@ -10,8 +10,12 @@ engine = create_async_engine(
     pool_pre_ping=True,
     # Only log SQL in local dev — production logs would leak query data and are very noisy.
     echo=settings.debug and settings.environment == "local",
-    pool_size=10,
-    max_overflow=20,
+    # Conservative pool size: each container runs multiple gunicorn/celery
+    # worker processes, each with its own pool. Use Supabase's pgbouncer
+    # connection pooler (port 6543, transaction mode) in production to stay
+    # under the project's max connection limit.
+    pool_size=5,
+    max_overflow=5,
     pool_timeout=30,
 )
 

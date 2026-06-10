@@ -19,7 +19,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import BusinessContext, get_current_business
 from app.db.session import get_db_session
-from app.main import app
+from app.main import _check_db, _check_redis, app
 
 # ---------------------------------------------------------------------------
 # Stable IDs reused across fixtures and tests
@@ -68,13 +68,16 @@ def mock_db() -> AsyncMock:
 @pytest_asyncio.fixture
 async def auth_client(business_ctx: BusinessContext, mock_db: AsyncMock) -> AsyncClient:
     """Authenticated HTTP client; all requests act as TEST_BUSINESS_ID."""
+
     async def _override_db():
         yield mock_db
 
     app.dependency_overrides[get_current_business] = lambda: business_ctx
     app.dependency_overrides[get_db_session] = _override_db
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         yield client
 
     app.dependency_overrides.clear()
@@ -83,5 +86,13 @@ async def auth_client(business_ctx: BusinessContext, mock_db: AsyncMock) -> Asyn
 @pytest_asyncio.fixture
 async def anon_client() -> AsyncClient:
     """Unauthenticated HTTP client — no auth dependency override."""
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    # /health pings real DB + Redis; stub both as healthy for tests.
+    app.dependency_overrides[_check_db] = lambda: True
+    app.dependency_overrides[_check_redis] = lambda: True
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         yield client
+
+    app.dependency_overrides.clear()

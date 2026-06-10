@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 
 from app.core.config import settings
 
@@ -25,4 +26,10 @@ celery_app.conf.update(
     task_acks_late=True,
     task_soft_time_limit=55,
     task_time_limit=75,
+    beat_schedule={
+        "expire-overdue-subscriptions": {
+            "task": "billing.expire_subscriptions",
+            "schedule": crontab(hour=2, minute=0),
+        },
+    },
 )

@@ -1,0 +1,58 @@
+{
+  "family": "whatsagent-worker",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/whatsagent-ecs-execution-role",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/whatsagent-ecs-task-role",
+  "containerDefinitions": [
+    {
+      "name": "whatsagent-worker",
+      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/whatsagent-api:latest",
+      "essential": true,
+      "command": [
+        "celery", "-A", "app.workers.celery_app.celery_app",
+        "worker",
+        "--loglevel=info",
+        "--concurrency=4",
+        "-Q", "default,ai,billing"
+      ],
+      "environment": [
+        { "name": "ENVIRONMENT", "value": "production" },
+        { "name": "DEBUG", "value": "false" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL",              "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:DATABASE_URL::" },
+        { "name": "REDIS_URL",                 "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:REDIS_URL::" },
+        { "name": "SUPABASE_URL",              "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:SUPABASE_URL::" },
+        { "name": "SUPABASE_JWKS_URL",         "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:SUPABASE_JWKS_URL::" },
+        { "name": "SUPABASE_ANON_KEY",         "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:SUPABASE_ANON_KEY::" },
+        { "name": "SUPABASE_SERVICE_ROLE_KEY", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:SUPABASE_SERVICE_ROLE_KEY::" },
+        { "name": "SUPABASE_JWT_ISSUER",       "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:SUPABASE_JWT_ISSUER::" },
+        { "name": "TOKEN_ENCRYPTION_KEY",      "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:TOKEN_ENCRYPTION_KEY::" },
+        { "name": "WHATSAPP_APP_ID",           "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:WHATSAPP_APP_ID::" },
+        { "name": "WHATSAPP_APP_SECRET",       "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:WHATSAPP_APP_SECRET::" },
+        { "name": "WHATSAPP_WEBHOOK_VERIFY_TOKEN", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:WHATSAPP_WEBHOOK_VERIFY_TOKEN::" },
+        { "name": "OPENAI_API_KEY",            "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:OPENAI_API_KEY::" },
+        { "name": "ANTHROPIC_API_KEY",         "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:ANTHROPIC_API_KEY::" },
+        { "name": "STRIPE_SECRET_KEY",         "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:STRIPE_SECRET_KEY::" },
+        { "name": "STRIPE_WEBHOOK_SECRET",     "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:STRIPE_WEBHOOK_SECRET::" },
+        { "name": "RAZORPAY_KEY_ID",           "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:RAZORPAY_KEY_ID::" },
+        { "name": "RAZORPAY_KEY_SECRET",       "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:RAZORPAY_KEY_SECRET::" },
+        { "name": "RAZORPAY_WEBHOOK_SECRET",   "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:RAZORPAY_WEBHOOK_SECRET::" },
+        { "name": "SENTRY_DSN",                "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:SENTRY_DSN::" },
+        { "name": "SENDGRID_API_KEY",          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:whatsagent/prod:SENDGRID_API_KEY::" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/whatsagent-worker",
+          "awslogs-region": "REGION",
+          "awslogs-stream-prefix": "worker"
+        }
+      },
+      "stopTimeout": 120
+    }
+  ]
+}
