@@ -55,7 +55,7 @@ async def list_members(
     return [TeamMemberResponse.model_validate(m) for m in members]
 
 
-@team_router.delete("/{business_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@team_router.delete("/{business_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def remove_member(
     business_id: uuid.UUID,
     user_id: uuid.UUID,
@@ -162,7 +162,7 @@ async def list_invites(
     return [InviteResponse.model_validate(i) for i in invites]
 
 
-@team_router.delete("/{business_id}/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)
+@team_router.delete("/{business_id}/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def revoke_invite(
     business_id: uuid.UUID,
     invite_id: uuid.UUID,

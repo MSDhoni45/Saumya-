@@ -20,7 +20,7 @@ _TEST_VARS: dict[str, str] = {
     "WHATSAPP_APP_ID": "test-app-id",
     "WHATSAPP_APP_SECRET": "test-app-secret-for-hmac-signing!!",
     "WHATSAPP_WEBHOOK_VERIFY_TOKEN": "test-verify-token",
-    "TOKEN_ENCRYPTION_KEY": "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eA==",
+    "TOKEN_ENCRYPTION_KEY": "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=",
     "ENVIRONMENT": "test",
     "DEBUG": "false",
     "AUTH_COOKIE_SECURE": "false",

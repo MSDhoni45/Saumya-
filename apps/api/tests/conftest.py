@@ -13,11 +13,13 @@ need specific DB return values set `mock_db.get.return_value` or
 import uuid
 from unittest.mock import AsyncMock, MagicMock
 
+import fakeredis.aioredis
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import BusinessContext, get_current_business
+from app.core import rate_limit as rate_limit_module
 from app.db.session import get_db_session
 from app.main import _check_db, _check_redis, app
 
@@ -33,6 +35,13 @@ OTHER_BUSINESS_ID = uuid.UUID("ffffffff-ffff-ffff-ffff-ffffffffffff")
 # ---------------------------------------------------------------------------
 # Core fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _fake_rate_limit_redis(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Back rate limiting with an in-memory Redis — fresh per test, so limits
+    never bleed between tests and the suite runs without a Redis server."""
+    monkeypatch.setattr(rate_limit_module, "_redis", fakeredis.aioredis.FakeRedis(decode_responses=True))
 
 
 @pytest.fixture
