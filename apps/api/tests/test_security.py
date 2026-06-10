@@ -12,6 +12,7 @@ from app.core.security import (
     TokenClaims,
     TokenError,
     decode_access_token,
+    is_allowed_redirect_url,
     verify_whatsapp_webhook_handshake,
     verify_whatsapp_webhook_signature,
 )
@@ -120,3 +121,45 @@ def test_wrong_token_rejected():
 
 def test_none_inputs_rejected():
     assert verify_whatsapp_webhook_handshake(None, None) is False
+
+
+# ---------------------------------------------------------------------------
+# is_allowed_redirect_url
+# ---------------------------------------------------------------------------
+
+
+def test_allowed_origin_accepted():
+    origin = settings.allowed_origins[0]
+    assert is_allowed_redirect_url(f"{origin}/reset-password") is True
+
+
+def test_allowed_origin_with_trailing_slash_accepted():
+    origin = settings.allowed_origins[0].rstrip("/")
+    assert is_allowed_redirect_url(f"{origin}/") is True
+
+
+def test_unknown_origin_rejected():
+    assert is_allowed_redirect_url("https://evil.example/reset-password") is False
+
+
+def test_protocol_relative_url_rejected():
+    # //evil.example resolves to scheme-relative absolute URL in browsers
+    assert is_allowed_redirect_url("//evil.example/reset-password") is False
+
+
+def test_javascript_scheme_rejected():
+    assert is_allowed_redirect_url("javascript:alert(1)") is False
+
+
+def test_origin_lookalike_subdomain_rejected():
+    origin = settings.allowed_origins[0]
+    parsed_host = origin.split("://", 1)[1]
+    assert is_allowed_redirect_url(f"https://evil-{parsed_host}/reset") is False
+
+
+def test_path_only_url_rejected():
+    assert is_allowed_redirect_url("/reset-password") is False
+
+
+def test_malformed_url_rejected():
+    assert is_allowed_redirect_url("http://[invalid") is False

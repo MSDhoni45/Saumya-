@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.core.rate_limit import rate_limit
+from app.core.security import is_allowed_redirect_url
 from app.db.session import get_db_session
 from app.models.user import User
 from app.models.whatsapp import Business
@@ -172,6 +173,8 @@ async def forgot_password(
     _rl: None = rate_limit(max_requests=3, window_seconds=300),
 ) -> MessageResponse:
     """Always returns success — never reveal whether an email is registered."""
+    if not is_allowed_redirect_url(payload.redirect_to):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="redirect_to must be a registered frontend URL")
     try:
         await auth_service.send_password_recovery_email(email=payload.email, redirect_to=payload.redirect_to)
     except GoTrueError:

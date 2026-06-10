@@ -2,6 +2,7 @@ import hashlib
 import hmac
 from dataclasses import dataclass
 from functools import lru_cache
+from urllib.parse import urlparse
 
 import jwt
 from jwt import PyJWKClient
@@ -78,3 +79,28 @@ def verify_whatsapp_webhook_signature(payload: bytes, signature_header: str | No
 def verify_whatsapp_webhook_handshake(mode: str | None, token: str | None) -> bool:
     """Validate the GET verification handshake Meta performs when registering a webhook."""
     return mode == "subscribe" and token == settings.whatsapp_webhook_verify_token
+
+
+@lru_cache
+def _allowed_redirect_origins() -> frozenset[str]:
+    origins = {origin.rstrip("/") for origin in settings.allowed_origins}
+    if settings.app_frontend_url:
+        origins.add(settings.app_frontend_url.rstrip("/"))
+    return frozenset(origins)
+
+
+def is_allowed_redirect_url(url: str) -> bool:
+    """Reject password-recovery `redirect_to` URLs that don't point at a known frontend origin.
+
+    Supabase forwards this URL verbatim into the recovery email link — without
+    an allow-list check, an attacker could pass `redirect_to=https://evil.example`
+    and phish users via a legitimate-looking password reset email (open redirect).
+    """
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return False
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    return origin in _allowed_redirect_origins()

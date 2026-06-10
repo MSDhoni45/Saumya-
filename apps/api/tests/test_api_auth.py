@@ -5,8 +5,11 @@ Two categories:
   2. Cross-tenant → 403     (valid token for a different business_id)
 """
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
+from app.core.config import settings
 from tests.conftest import OTHER_BUSINESS_ID, TEST_BUSINESS_ID
 
 # ---------------------------------------------------------------------------
@@ -90,3 +93,27 @@ async def test_webhook_get_without_token_requires_verify_token(anon_client):
     response = await anon_client.get("/webhooks/whatsapp")
     # Without hub.mode and hub.verify_token it returns 403 (bad handshake), not 401
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# forgot-password — redirect_to open-redirect guard (H2)
+# ---------------------------------------------------------------------------
+
+
+async def test_forgot_password_rejects_unknown_redirect_origin(anon_client):
+    response = await anon_client.post(
+        "/api/v1/auth/forgot-password",
+        json={"email": "user@example.com", "redirect_to": "https://evil.example/reset-password"},
+    )
+    assert response.status_code == 400
+
+
+async def test_forgot_password_accepts_allowed_redirect_origin(anon_client):
+    origin = settings.allowed_origins[0]
+    with patch("app.services.auth_service.send_password_recovery_email", new_callable=AsyncMock) as mock_send:
+        response = await anon_client.post(
+            "/api/v1/auth/forgot-password",
+            json={"email": "user@example.com", "redirect_to": f"{origin}/reset-password"},
+        )
+    assert response.status_code == 200
+    mock_send.assert_awaited_once()
