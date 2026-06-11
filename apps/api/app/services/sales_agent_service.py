@@ -155,7 +155,7 @@ async def record_interaction(
         prompt_tokens=result.prompt_tokens,
         completion_tokens=result.completion_tokens,
         latency_ms=result.latency_ms,
-        retrieved_chunk_ids=[chunk.document_id for chunk in result.retrieved_chunks],
+        retrieved_chunk_ids=[chunk.chunk_id for chunk in result.retrieved_chunks],
         extracted_lead_fields=result.extracted_lead_fields,
     )
     session.add(interaction)

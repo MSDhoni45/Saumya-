@@ -104,6 +104,35 @@ class Document(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, server_default=func.now())
 
     knowledge_base: Mapped["KnowledgeBase"] = relationship(back_populates="documents")
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan", order_by="DocumentChunk.chunk_index"
+    )
+
+
+class DocumentChunk(Base):
+    """Token-bounded slice of `Document.content` with its own embedding vector.
+
+    RAG retrieval queries this table directly so similarity search returns the
+    exact passage the model should ground on, instead of a single embedding
+    representing a truncated whole document.
+    """
+
+    __tablename__ = "document_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    )
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(_EMBEDDING_DIM))
+    token_count: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, server_default=func.now())
+
+    document: Mapped["Document"] = relationship(back_populates="chunks")
 
 
 class Lead(Base):

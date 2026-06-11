@@ -1,24 +1,22 @@
 import logging
 import uuid
 
+from sqlalchemy import delete
+
 from app.db.session import async_session_factory
-from app.models.agent import Document
-from app.services.embeddings import embed_texts
+from app.models.agent import Document, DocumentChunk
+from app.services.embeddings import chunk_text, embed_texts
 from app.workers.celery_app import celery_app
 from app.workers.tasks.agent_tasks import _get_worker_loop
 
 logger = logging.getLogger(__name__)
-
-# Max characters sent to the embedding model. text-embedding-3-small supports
-# ~8 191 tokens; at ~4 chars/token that's ~32 k chars. We leave headroom.
-_MAX_EMBED_CHARS = 30_000
 
 
 @celery_app.task(name="knowledge.embed_document", bind=True, max_retries=3, default_retry_delay=30)
 def embed_document(self, *, document_id: str) -> None:
     """Chunk and embed a newly-added knowledge base document.
 
-    Status flow: pending → (processing is skipped for simplicity) → ready | error.
+    Status flow: pending → ready | error.
     On transient failures (API timeouts, rate limits) Celery retries up to 3×
     with exponential back-off; the document stays in `error` state after
     exhausting retries.
@@ -37,14 +35,50 @@ async def _embed_document(document_id: uuid.UUID) -> None:
             return
 
         try:
-            (embedding,) = await embed_texts([doc.content[:_MAX_EMBED_CHARS]])
+            chunks = chunk_text(doc.content)
+            if not chunks:
+                # Empty content — clear any prior chunks so we don't keep
+                # stale embeddings around, then mark ready with no retrieval
+                # surface.
+                await session.execute(
+                    delete(DocumentChunk).where(DocumentChunk.document_id == doc.id)
+                )
+                doc.embedding = None
+                doc.status = "ready"
+                doc.error_message = None
+                await session.commit()
+                return
+
+            embeddings = await embed_texts(chunks)
         except Exception as exc:
             doc.status = "error"
             doc.error_message = str(exc)[:500]
             await session.commit()
             raise
 
-        doc.embedding = embedding
+        # Idempotent re-embed: drop any prior chunks for this document so we
+        # never end up with a mix of old + new vectors for the same content.
+        await session.execute(
+            delete(DocumentChunk).where(DocumentChunk.document_id == doc.id)
+        )
+
+        session.add_all(
+            [
+                DocumentChunk(
+                    document_id=doc.id,
+                    business_id=doc.business_id,
+                    chunk_index=i,
+                    content=chunk,
+                    embedding=embedding,
+                )
+                for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
+            ]
+        )
+
+        # Keep `Document.embedding` populated with the first chunk's vector
+        # for back-compat with any reader that has not yet migrated. New
+        # retrieval reads from `document_chunks`.
+        doc.embedding = embeddings[0]
         doc.status = "ready"
         doc.error_message = None
         await session.commit()
