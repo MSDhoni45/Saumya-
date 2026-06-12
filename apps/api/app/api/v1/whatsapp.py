@@ -110,6 +110,31 @@ async def send_message(
 
     _validate_send_payload(payload)
 
+    from app.schemas.whatsapp import WebhookContact
+
+    # Resolve the conversation up-front so we can enforce the 24-hour service
+    # window *before* hitting Meta — sending a free-form message past the
+    # window would be rejected with error 131047 anyway, and we'd rather fail
+    # fast with a structured 409 than burn a Graph API call.
+    conversation = await conversation_service.get_or_create_conversation(
+        session,
+        business_id=business_id,
+        whatsapp_account_id=account.id,
+        contact=WebhookContact(wa_id=payload.to),
+    )
+
+    if payload.message_type != "template":
+        last_inbound_at = await conversation_service.get_last_inbound_at(session, conversation.id)
+        if not conversation_service.is_within_service_window(last_inbound_at):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "OUTSIDE_SERVICE_WINDOW",
+                    "message": "Free-form WhatsApp messages are not allowed outside the 24-hour customer service window.",
+                    "requires_template": True,
+                },
+            )
+
     client = WhatsAppClient(phone_number_id=account.phone_number_id, access_token=decrypt_secret(account.access_token))
 
     try:
@@ -117,6 +142,13 @@ async def send_message(
             api_response = await client.send_text_message(payload.to, payload.text or "")
         elif payload.message_type == "image":
             api_response = await client.send_image_message(payload.to, payload.media_url or "", payload.caption)
+        elif payload.message_type == "template":
+            api_response = await client.send_template_message(
+                payload.to,
+                payload.template_name or "",
+                payload.language_code or "",
+                payload.template_components,
+            )
         else:
             api_response = await client.send_document_message(
                 payload.to, payload.media_url or "", payload.filename, payload.caption
@@ -126,13 +158,8 @@ async def send_message(
 
     whatsapp_message_id = api_response["messages"][0]["id"]
 
-    from app.schemas.whatsapp import WebhookContact
-
-    conversation = await conversation_service.get_or_create_conversation(
-        session,
-        business_id=business_id,
-        whatsapp_account_id=account.id,
-        contact=WebhookContact(wa_id=payload.to),
+    stored_content = (
+        payload.template_name if payload.message_type == "template" else (payload.text or payload.caption)
     )
     message = await conversation_service.store_outbound_message(
         session,
@@ -140,7 +167,7 @@ async def send_message(
         conversation_id=conversation.id,
         sender_type="agent",
         message_type=payload.message_type,
-        content=payload.text or payload.caption,
+        content=stored_content,
         media_url=payload.media_url,
         whatsapp_message_id=whatsapp_message_id,
     )
@@ -319,6 +346,11 @@ def _validate_send_payload(payload: SendMessageRequest) -> None:
     if payload.message_type in ("image", "document") and not payload.media_url:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, detail="`media_url` is required for image/document messages"
+        )
+    if payload.message_type == "template" and (not payload.template_name or not payload.language_code):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="`template_name` and `language_code` are required for template messages",
         )
 
 

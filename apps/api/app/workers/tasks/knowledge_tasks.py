@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 def embed_document(self, *, document_id: str) -> None:
     """Chunk and embed a newly-added knowledge base document.
 
-    Status flow: pending → ready | error.
+    Status flow: pending → ready | failed.
     On transient failures (API timeouts, rate limits) Celery retries up to 3×
-    with exponential back-off; the document stays in `error` state after
+    with exponential back-off; the document stays in `failed` state after
     exhausting retries.
     """
     try:
@@ -31,7 +31,7 @@ def embed_document(self, *, document_id: str) -> None:
 async def _embed_document(document_id: uuid.UUID) -> None:
     async with async_session_factory() as session:
         doc = await session.get(Document, document_id)
-        if doc is None or doc.status not in ("pending", "error"):
+        if doc is None or doc.status not in ("pending", "failed"):
             return
 
         try:
@@ -51,7 +51,7 @@ async def _embed_document(document_id: uuid.UUID) -> None:
 
             embeddings = await embed_texts(chunks)
         except Exception as exc:
-            doc.status = "error"
+            doc.status = "failed"
             doc.error_message = str(exc)[:500]
             await session.commit()
             raise

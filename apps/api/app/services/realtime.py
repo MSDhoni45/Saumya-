@@ -9,7 +9,8 @@ on disconnect.
 
 Channel naming
 --------------
-  conv:{conversation_id}:msg   — new / updated messages for a single thread
+  conv:{conversation_id}:msg     — new / updated messages for a single thread
+  biz:{business_id}:alerts       — operator-visible pipeline alerts
 """
 
 import asyncio
@@ -38,6 +39,21 @@ def _get_redis() -> aioredis.Redis:
     return _redis
 
 
+async def publish_message_status(conversation_id: str, message_id: str, status: str) -> None:
+    """Publish a status transition (sent/delivered/read/failed) for an existing message.
+
+    Goes on the same `conv:{id}:msg` channel as new messages — the SSE consumer
+    distinguishes by payload shape (status events carry a `status` field plus a
+    message_id, no `direction`). Errors swallowed for the same reason as
+    `publish_new_message`.
+    """
+    payload = {"event": "message_status", "message_id": message_id, "status": status}
+    try:
+        await _get_redis().publish(f"conv:{conversation_id}:msg", json.dumps(payload))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def publish_new_message(conversation_id: str, message_data: dict) -> None:
     """Publish a serialised MessageResponse to the conversation's channel.
 
@@ -46,6 +62,27 @@ async def publish_new_message(conversation_id: str, message_data: dict) -> None:
     """
     try:
         await _get_redis().publish(f"conv:{conversation_id}:msg", json.dumps(message_data))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def publish_operator_alert(
+    *, business_id: str, alert_id: str, kind: str, severity: str, title: str
+) -> None:
+    """Broadcast a new operator alert to a business's SSE channel.
+
+    Same swallow-errors policy as `publish_new_message` — a Redis outage must
+    never break the failure-recording path that triggered the alert.
+    """
+    payload = {
+        "event": "operator_alert",
+        "alert_id": alert_id,
+        "kind": kind,
+        "severity": severity,
+        "title": title,
+    }
+    try:
+        await _get_redis().publish(f"biz:{business_id}:alerts", json.dumps(payload))
     except Exception:  # noqa: BLE001
         pass
 

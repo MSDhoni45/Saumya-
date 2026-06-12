@@ -23,6 +23,28 @@ class UsageLimitExceeded(Exception):
         )
 
 
+class SubscriptionInactive(Exception):
+    """Raised when the business's subscription is in a state that should suppress AI replies.
+
+    `paused` and `cancelled` block AI traffic outright. `past_due` is treated as
+    still active (Stripe convention — dunning happens while service continues
+    until the subscription is actually cancelled).
+    """
+
+    def __init__(self, status: str) -> None:
+        self.status = status
+        super().__init__(
+            f"AI replies are paused — subscription is {status}. "
+            "Reactivate billing to resume automated replies."
+        )
+
+
+# Subscription statuses that suppress AI replies. `past_due` intentionally
+# absent: Stripe leaves the subscription functional during dunning, and our
+# billing webhook flips it back to `active` on successful payment.
+_BLOCKING_STATUSES = frozenset({"paused", "cancelled"})
+
+
 def _period_start() -> datetime:
     now = datetime.now(tz=timezone.utc)
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -84,13 +106,21 @@ async def increment_usage(session: AsyncSession, business_id: uuid.UUID) -> int:
 
 
 async def check_usage_limit(session: AsyncSession, business_id: uuid.UUID) -> None:
-    """Raise UsageLimitExceeded if the business is at its plan limit for this month."""
+    """Gate AI replies on subscription state and monthly usage.
+
+    Raises:
+        SubscriptionInactive: subscription is `paused` or `cancelled` — block
+            outright regardless of plan or usage. Caller surfaces this to the
+            operator inbox so they know why the bot went quiet.
+        UsageLimitExceeded: subscription is otherwise live but the monthly
+            message cap has been reached.
+    """
     sub = await get_or_create_subscription(session, business_id)
+    if sub.status in _BLOCKING_STATUSES:
+        raise SubscriptionInactive(status=sub.status)
     plan = get_plan(sub.plan)
     if plan.message_limit is None:
         return  # Agency — unlimited
-    if sub.status not in ("active", "trialing"):
-        return  # Lapsed subscription — let through, handle via billing UI
     usage = await get_current_usage(session, business_id)
     if usage.message_count >= plan.message_limit:
         raise UsageLimitExceeded(plan=sub.plan, limit=plan.message_limit)

@@ -9,7 +9,7 @@ from app.db.session import async_session_factory
 from app.schemas.whatsapp import MessageResponse, WebhookEnvelope, WebhookMediaPayload
 from app.services import conversation_service
 from app.services.encryption import decrypt_secret
-from app.services.realtime import publish_new_message
+from app.services.realtime import publish_message_status, publish_new_message
 from app.services.storage import upload_inbound_media
 from app.services.whatsapp_client import WhatsAppClient
 from app.workers.tasks.agent_tasks import generate_and_send_reply
@@ -66,9 +66,18 @@ async def receive_webhook(
 
     for entry in envelope.entry:
         for change in entry.changes:
-            if change.field != "messages" or not change.value.messages:
+            # Meta delivers both inbound messages and outbound status receipts
+            # under `field == "messages"` (the WhatsApp Cloud subscription
+            # name); the two arrays travel independently in the same change
+            # block. Process each one whose array is populated — earlier we
+            # short-circuited unless `messages` was non-empty, which silently
+            # dropped every status callback.
+            if change.field != "messages":
                 continue
-            await _process_message_change(change.value)
+            if change.value.messages:
+                await _process_message_change(change.value)
+            if change.value.statuses:
+                await _process_status_change(change.value)
 
     return {"status": "received"}
 
@@ -159,3 +168,31 @@ async def _persist_inbound_messages(
             )
 
     return stored_data
+
+
+async def _process_status_change(value) -> None:  # noqa: ANN001 - WebhookValue, see _process_message_change
+    """Apply a batch of Meta status callbacks to existing outbound messages.
+
+    The same swallow-on-failure contract as the inbound path: never surface a
+    non-2xx to Meta over a processing error, since that triggers redelivery
+    storms that eventually disable the subscription.
+    """
+    published: list[tuple[str, str, str]] = []
+
+    async with async_session_factory() as session:
+        try:
+            for status_event in value.statuses or []:
+                updated = await conversation_service.apply_message_status(session, status_event=status_event)
+                if updated is not None:
+                    # Capture identifiers now while the row is attached; we
+                    # publish to SSE *after* commit so the consumer doesn't
+                    # race a rollback.
+                    published.append((str(updated.conversation_id), str(updated.id), updated.status))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            logger.exception("Failed to apply WhatsApp status callbacks")
+            return
+
+    for conversation_id, message_id, status_value in published:
+        await publish_message_status(conversation_id, message_id, status_value)

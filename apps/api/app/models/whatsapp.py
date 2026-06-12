@@ -94,6 +94,13 @@ class Message(Base):
     media_url: Mapped[str | None] = mapped_column(Text)
     whatsapp_message_id: Mapped[str | None] = mapped_column(String, unique=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default="sent")
+    # Meta callback timestamps — populated as the message walks the
+    # sent → delivered → read state machine (or terminates at failed).
+    delivered_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME)
+    read_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME)
+    failed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME)
+    error_code: Mapped[str | None] = mapped_column(String)
+    error_title: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, server_default=func.now())
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")

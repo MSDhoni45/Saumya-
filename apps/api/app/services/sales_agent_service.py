@@ -1,7 +1,7 @@
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import AiAgent, AiInteraction
@@ -132,6 +132,79 @@ async def generate_agent_reply(
         completion_tokens=completion.completion_tokens,
         latency_ms=completion.latency_ms,
     )
+
+
+async def reserve_interaction(
+    session: AsyncSession,
+    *,
+    agent: AiAgent,
+    conversation_id: uuid.UUID,
+    inbound_message_id: uuid.UUID,
+) -> uuid.UUID | None:
+    """Reserve an `ai_interactions` row for this inbound message.
+
+    Returns the new interaction id on success, or `None` if a row for this
+    `inbound_message_id` already exists. The caller MUST commit immediately
+    after a successful reservation so a concurrent retry (Celery, parallel
+    worker) sees the marker and short-circuits before calling the LLM or
+    sending a WhatsApp message.
+
+    The `ux_ai_interactions_inbound_message_id` UNIQUE constraint (see
+    migration 20260612000001) is what makes the ON CONFLICT race-safe.
+    Without it, two simultaneous INSERTs could both succeed.
+    """
+    result = await session.execute(
+        text("""
+            INSERT INTO ai_interactions (
+                id, business_id, agent_id, conversation_id, inbound_message_id,
+                provider, model, retrieved_chunk_ids, extracted_lead_fields
+            ) VALUES (
+                gen_random_uuid(), :bid, :aid, :cid, :imid,
+                :provider, :model, ARRAY[]::uuid[], '{}'::jsonb
+            )
+            ON CONFLICT (inbound_message_id) DO NOTHING
+            RETURNING id
+        """),
+        {
+            "bid": agent.business_id,
+            "aid": agent.id,
+            "cid": conversation_id,
+            "imid": inbound_message_id,
+            "provider": agent.provider,
+            "model": agent.model,
+        },
+    )
+    row = result.fetchone()
+    return row[0] if row else None
+
+
+async def finalize_interaction(
+    session: AsyncSession,
+    *,
+    interaction_id: uuid.UUID,
+    outbound_message_id: uuid.UUID,
+    result: AgentReplyResult,
+) -> None:
+    """Fill in tokens / latency / chunks / extracted fields on a reserved row.
+
+    Paired with `reserve_interaction`: the row already exists (with provider
+    + model recorded at reservation time); this just attaches the post-send
+    audit data. No new row is created — preserves the one-inbound-one-reply
+    invariant the UNIQUE constraint enforces.
+    """
+    interaction = await session.get(AiInteraction, interaction_id)
+    if interaction is None:
+        # Reservation row vanished between reserve and finalize — should not
+        # happen in practice (no caller deletes interactions), but logging
+        # is better than a silent no-op.
+        raise RuntimeError(f"Reserved AiInteraction {interaction_id} disappeared before finalize")
+    interaction.outbound_message_id = outbound_message_id
+    interaction.prompt_tokens = result.prompt_tokens
+    interaction.completion_tokens = result.completion_tokens
+    interaction.latency_ms = result.latency_ms
+    interaction.retrieved_chunk_ids = [chunk.chunk_id for chunk in result.retrieved_chunks]
+    interaction.extracted_lead_fields = result.extracted_lead_fields
+    await session.flush()
 
 
 async def record_interaction(

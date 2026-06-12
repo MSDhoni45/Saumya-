@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536
+    # Cross-provider fallback (OpenAI ↔ Anthropic). When the primary provider
+    # exhausts its retry budget on a retryable error (429 / 5xx / network),
+    # `generate_structured_reply` retries against the other provider using the
+    # fallback model below. Off by default so behaviour is unchanged for
+    # callers that haven't opted in.
+    llm_fallback_enabled: bool = False
+    fallback_openai_model: str = "gpt-4o-mini"
+    fallback_anthropic_model: str = "claude-sonnet-4-5"
 
     # --- Token encryption (at-rest encryption of stored OAuth/API tokens) ----
     token_encryption_key: str

@@ -162,8 +162,8 @@ async def test_embed_document_idempotent_on_rerun(fake_document):
     fake_chunks = ["only one"]
     fake_vectors = [[0.5] * 1536]
 
-    # Worker only re-runs on pending/error — simulate a retry after a failure.
-    fake_document.status = "error"
+    # Worker only re-runs on pending/failed — simulate a retry after a failure.
+    fake_document.status = "failed"
 
     with (
         patch.object(knowledge_tasks, "async_session_factory", return_value=cm),

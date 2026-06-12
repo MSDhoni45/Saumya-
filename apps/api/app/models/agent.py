@@ -194,6 +194,35 @@ class LeadNote(Base):
     lead: Mapped["Lead"] = relationship(back_populates="lead_notes")
 
 
+class OperatorAlert(Base):
+    """Operator-visible record of an automated-pipeline failure.
+
+    Created when the agent path cannot finish a turn (WhatsApp send error,
+    terminal `failed` status callback). Separate from system messages because
+    alerts need acknowledgement state and a dedicated inbox.
+    """
+
+    __tablename__ = "operator_alerts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False
+    )
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="SET NULL")
+    )
+    message_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("messages.id", ondelete="SET NULL")
+    )
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    severity: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, server_default=func.now())
+    acknowledged_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME)
+    acknowledged_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+
+
 class LeadEvent(Base):
     """Append-only timeline journal for a lead.
 

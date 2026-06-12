@@ -84,6 +84,39 @@ class WhatsAppClient:
             },
         )
 
+    async def send_template_message(
+        self,
+        to: str,
+        template_name: str,
+        language_code: str,
+        components: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Send an approved WhatsApp template — the only message type permitted
+        outside the 24-hour customer service window.
+
+        ``components`` carries header/body/button parameter substitutions per
+        Meta's template spec; omitted when the template has no variables. Meta
+        remains the source of truth for template approval — we do not validate
+        the name here; an unknown/unapproved template returns a 4xx that the
+        caller surfaces.
+        """
+        template: dict[str, Any] = {
+            "name": template_name,
+            "language": {"code": language_code},
+        }
+        if components:
+            template["components"] = components
+        return await self._post(
+            f"{self._phone_number_id}/messages",
+            {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": to,
+                "type": "template",
+                "template": template,
+            },
+        )
+
     async def send_document_message(
         self, to: str, link: str, filename: str | None = None, caption: str | None = None
     ) -> dict[str, Any]:
