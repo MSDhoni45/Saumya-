@@ -88,6 +88,11 @@ class Settings(BaseSettings):
     email_from_address: str = "noreply@whatsagent.ai"
     email_from_name: str = "WhatsAgent AI"
 
+    # --- X (Twitter) API -----------------------------------------------------
+    x_client_id: str | None = None
+    x_client_secret: str | None = None
+    x_bearer_token: str | None = None   # App-only bearer token for search
+
     # --- Frontend ------------------------------------------------------------
     app_frontend_url: str | None = None
 

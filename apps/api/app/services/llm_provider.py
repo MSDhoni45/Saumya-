@@ -267,3 +267,38 @@ def _is_fallback_eligible(provider: str, exc: BaseException) -> bool:
     if provider == "openai":
         return _is_retryable_openai(exc)
     return _is_retryable_anthropic(exc)
+
+
+async def generate_raw_completion(
+    *,
+    prompt: str,
+    provider: str = "anthropic",
+    model: str = "claude-haiku-4-5-20251001",
+    temperature: float = 0.3,
+    max_tokens: int = 1024,
+) -> str:
+    """Free-form text completion — no structured schema enforcement.
+
+    Used by non-agent flows (X outreach scoring, content ideas) that need
+    LLM output but aren't constrained to the sales-agent reply shape.
+    Returns the raw text string from the model.
+    """
+    if provider == "anthropic":
+        response = await _anthropic_client().messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return "".join(block.text for block in response.content if block.type == "text")
+
+    if provider == "openai":
+        response = await _openai_client().chat.completions.create(
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.choices[0].message.content or ""
+
+    raise LlmProviderError(f"Unsupported provider for raw completion: {provider!r}")

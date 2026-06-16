@@ -17,6 +17,7 @@ celery_app = Celery(
         "app.workers.tasks.agent_tasks",
         "app.workers.tasks.knowledge_tasks",
         "app.workers.tasks.billing_tasks",
+        "app.workers.tasks.x_tasks",
     ],
 )
 
@@ -36,6 +37,14 @@ celery_app.conf.update(
         "expire-overdue-subscriptions": {
             "task": "billing.expire_subscriptions",
             "schedule": crontab(hour=2, minute=0),
+        },
+        "x-post-scheduled-content": {
+            "task": "x.post_scheduled",
+            "schedule": crontab(minute="*/5"),   # every 5 minutes
+        },
+        "x-refresh-tokens": {
+            "task": "x.refresh_tokens",
+            "schedule": crontab(minute=30),      # every hour at :30
         },
     },
 )
