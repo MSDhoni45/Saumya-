@@ -1,6 +1,14 @@
 -- X Automation v2: DM tracking + auto-DM config + webhook reply storage
 -- Safe to run multiple times (IF NOT EXISTS / IF EXISTS guards).
 
+-- ── x_outreach: expand status CHECK to include 'dm_sent' ───────────────────
+ALTER TABLE public.x_outreach
+  DROP CONSTRAINT IF EXISTS x_outreach_status_check;
+
+ALTER TABLE public.x_outreach
+  ADD CONSTRAINT x_outreach_status_check
+  CHECK (status IN ('pending','reviewed','sent','dm_sent','replied','converted','skipped'));
+
 -- ── x_lead_searches: auto-DM configuration ──────────────────────────────────
 ALTER TABLE public.x_lead_searches
   ADD COLUMN IF NOT EXISTS auto_dm_enabled   BOOLEAN NOT NULL DEFAULT FALSE,
