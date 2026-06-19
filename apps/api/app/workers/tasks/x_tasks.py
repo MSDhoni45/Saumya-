@@ -256,16 +256,10 @@ def refresh_x_tokens(self) -> None:
 
 
 async def _refresh_tokens() -> None:
-    import httpx
-
     from app.core.config import settings
 
     async with async_session_factory() as session:
         now = datetime.now(tz=timezone.utc)
-        # Find tokens expiring within 1 hour
-        from sqlalchemy import and_
-        from sqlalchemy import func as sqlfunc
-
         stmt = select(XAccount).where(
             XAccount.is_active.is_(True),
             XAccount.refresh_token.isnot(None),
@@ -281,27 +275,18 @@ async def _refresh_tokens() -> None:
                 continue
 
             try:
-                refresh_token = decrypt_secret(account.refresh_token)  # type: ignore[arg-type]
-                async with httpx.AsyncClient(timeout=15.0) as http:
-                    resp = await http.post(
-                        "https://api.twitter.com/2/oauth2/token",
-                        data={
-                            "grant_type": "refresh_token",
-                            "refresh_token": refresh_token,
-                            "client_id": settings.x_client_id,
-                        },
-                        auth=(settings.x_client_id, settings.x_client_secret),
-                    )
-                    resp.raise_for_status()
-                    token_data = resp.json()
+                from datetime import timedelta
+
+                from app.services.x_oauth import refresh_access_token
+
+                raw_refresh = decrypt_secret(account.refresh_token)  # type: ignore[arg-type]
+                token_data = await refresh_access_token(raw_refresh)
 
                 account.access_token = encrypt_secret(token_data["access_token"])
                 if token_data.get("refresh_token"):
                     account.refresh_token = encrypt_secret(token_data["refresh_token"])
                 expires_in = token_data.get("expires_in", 7200)
-                account.token_expires_at = datetime.now(tz=timezone.utc).replace(
-                    second=0, microsecond=0
-                ).replace(second=expires_in)
+                account.token_expires_at = datetime.now(tz=timezone.utc) + timedelta(seconds=expires_in)
                 account.updated_at = datetime.now(tz=timezone.utc)
                 await session.commit()
                 logger.info("Refreshed X token for account @%s", account.username)

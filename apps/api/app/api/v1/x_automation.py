@@ -1,12 +1,16 @@
 """X (Twitter) Automation API endpoints.
 
 Routes:
-  /x/{business_id}/accounts         — connect & list X accounts
-  /x/{business_id}/posts            — CRUD for scheduled/draft posts
-  /x/{business_id}/searches         — keyword search configs for lead finding
-  /x/{business_id}/outreach         — view & update discovered X leads
-  /x/{business_id}/outreach/{id}/send — push the outreach message as a reply
-  /x/{business_id}/content-ideas    — AI-generated tweet ideas
+  GET  /x/oauth/callback                       — OAuth2 PKCE callback (public, called by X)
+  GET  /x/{business_id}/accounts/oauth/authorize — initiate X OAuth2 PKCE connect flow
+  POST /x/{business_id}/accounts               — connect X account (manual token entry)
+  GET  /x/{business_id}/accounts               — list connected accounts
+  DEL  /x/{business_id}/accounts/{account_id} — disconnect account
+  /x/{business_id}/posts                       — CRUD for scheduled/draft posts
+  /x/{business_id}/searches                    — keyword search configs for lead finding
+  /x/{business_id}/outreach                    — view & update discovered X leads
+  /x/{business_id}/outreach/{id}/send          — push the outreach message as a reply
+  /x/{business_id}/content-ideas               — AI-generated tweet ideas
 """
 
 import math
@@ -15,10 +19,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import BusinessContext, get_current_business, require_business_access
+from app.core.config import settings
 from app.db.session import get_db_session
 from app.models.x_automation import XAccount, XLeadSearch, XOutreach, XPost
 from app.schemas.x_automation import (
@@ -37,12 +44,113 @@ from app.schemas.x_automation import (
 )
 from app.services.encryption import decrypt_secret, encrypt_secret
 from app.services.x_client import XApiError, XUserClient
+from app.services.x_oauth import exchange_code_for_tokens, generate_authorize_url
 from app.services.x_outreach_service import generate_content_ideas
 
 router = APIRouter(prefix="/x", tags=["x-automation"])
 
 _DEFAULT_PAGE = 25
 _MAX_PAGE = 100
+
+
+# ---------------------------------------------------------------------------
+# OAuth 2.0 PKCE connect flow
+# NOTE: /oauth/callback is registered BEFORE /{business_id}/... routes so
+# FastAPI matches the static path first (avoids UUID parse attempt on "oauth").
+# ---------------------------------------------------------------------------
+
+
+@router.get("/oauth/callback", include_in_schema=False)
+async def x_oauth_callback(
+    code: str | None = Query(None),
+    state: str | None = Query(None),
+    error: str | None = Query(None),
+    session: AsyncSession = Depends(get_db_session),
+) -> RedirectResponse:
+    """X redirects here after user authorizes. Exchanges code → tokens, upserts XAccount.
+
+    This endpoint is PUBLIC — no JWT required. X calls it with the user's browser.
+    On success redirects to /x/connect?connected=true&username=@handle.
+    On failure redirects to /x/connect?error=<reason>.
+    """
+    frontend_base = (settings.app_frontend_url or "http://localhost:3000").rstrip("/")
+    ok_url = f"{frontend_base}/x/connect"
+
+    if error:
+        return RedirectResponse(url=f"{ok_url}?error={error}")
+    if not code or not state:
+        return RedirectResponse(url=f"{ok_url}?error=missing_params")
+
+    try:
+        tokens = await exchange_code_for_tokens(code, state)
+    except ValueError:
+        return RedirectResponse(url=f"{ok_url}?error=token_exchange_failed")
+
+    business_id = uuid.UUID(tokens["business_id"])
+    access_token = tokens["access_token"]
+    refresh_token = tokens.get("refresh_token")
+    token_expires_at = (
+        datetime.fromisoformat(tokens["token_expires_at"])
+        if tokens.get("token_expires_at")
+        else None
+    )
+
+    try:
+        me = await XUserClient(access_token=access_token).get_me()
+        user_data = me.get("data", {})
+        x_user_id: str = user_data.get("id", "")
+        username: str = user_data.get("username", "")
+        display_name: str | None = user_data.get("name")
+    except XApiError:
+        return RedirectResponse(url=f"{ok_url}?error=profile_fetch_failed")
+
+    stmt = (
+        pg_insert(XAccount)
+        .values(
+            id=uuid.uuid4(),
+            business_id=business_id,
+            x_user_id=x_user_id,
+            username=username,
+            display_name=display_name,
+            access_token=encrypt_secret(access_token),
+            refresh_token=encrypt_secret(refresh_token) if refresh_token else None,
+            token_expires_at=token_expires_at,
+            is_active=True,
+        )
+        .on_conflict_do_update(
+            constraint="x_accounts_business_id_x_user_id_key",
+            set_={
+                "access_token": encrypt_secret(access_token),
+                "refresh_token": encrypt_secret(refresh_token) if refresh_token else None,
+                "token_expires_at": token_expires_at,
+                "is_active": True,
+                "updated_at": datetime.now(tz=timezone.utc),
+            },
+        )
+    )
+    await session.execute(stmt)
+    await session.commit()
+
+    return RedirectResponse(url=f"{ok_url}?connected=true&username={username}")
+
+
+@router.get("/{business_id}/accounts/oauth/authorize")
+async def x_oauth_authorize(
+    business_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
+) -> dict[str, str]:
+    """Return an X OAuth2 PKCE authorization URL.
+
+    The frontend should redirect the user's browser to `url`. X will redirect
+    back to /x/oauth/callback after the user authorizes the app.
+    """
+    require_business_access(ctx, business_id)
+    if not settings.x_client_id or not settings.x_client_secret:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="X OAuth is not configured — set X_CLIENT_ID and X_CLIENT_SECRET",
+        )
+    return await generate_authorize_url(business_id)
 
 
 # ---------------------------------------------------------------------------
