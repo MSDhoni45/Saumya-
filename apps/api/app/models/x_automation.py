@@ -74,6 +74,8 @@ class XLeadSearch(Base):
     min_followers: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
     language: Mapped[str] = mapped_column(String, nullable=False, default="en")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    auto_dm_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    auto_dm_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=70)
     last_run_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, server_default=func.now())
 
@@ -111,6 +113,10 @@ class XOutreach(Base):
     outreach_message: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
     sent_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME)
+    dm_message_id: Mapped[str | None] = mapped_column(String)
+    dm_sent_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME)
+    reply_text: Mapped[str | None] = mapped_column(Text)
+    replied_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, server_default=func.now())
 

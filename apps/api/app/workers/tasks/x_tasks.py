@@ -1,9 +1,11 @@
 """Celery tasks for X (Twitter) automation.
 
-Three scheduled/on-demand tasks:
+Four scheduled/on-demand tasks:
   1. run_x_lead_scan   — searches X for prospects matching active search configs
   2. post_scheduled_x  — posts any tweets/threads whose scheduled_at has passed
   3. refresh_x_tokens  — refreshes expiring OAuth 2.0 user tokens
+  4. auto_send_dms     — sends DMs to high-scoring pending prospects (searches
+                         with auto_dm_enabled=True)
 """
 
 import asyncio
@@ -293,3 +295,102 @@ async def _refresh_tokens() -> None:
             except Exception:
                 await session.rollback()
                 logger.exception("Failed to refresh X token for account @%s", account.username)
+
+
+# ---------------------------------------------------------------------------
+# Task 4: Auto-send DMs to high-scoring prospects
+# ---------------------------------------------------------------------------
+
+
+@celery_app.task(name="x.auto_send_dms", bind=True, max_retries=2, default_retry_delay=60)
+def auto_send_dms(self) -> None:
+    """Send DMs to pending high-scoring prospects for searches with auto_dm_enabled=True.
+
+    Runs every 30 minutes. Respects per-search auto_dm_threshold (default 70).
+    Skips prospects who already have status != 'pending'.
+    """
+    try:
+        _get_worker_loop().run_until_complete(_auto_send_dms())
+    except Exception as exc:
+        logger.exception("auto_send_dms task failed")
+        raise self.retry(exc=exc) from exc
+
+
+async def _auto_send_dms() -> None:
+    from datetime import timedelta
+
+    async with async_session_factory() as session:
+        # Fetch all searches that have auto-DM enabled
+        searches = list(
+            (await session.execute(
+                select(XLeadSearch).where(
+                    XLeadSearch.is_active.is_(True),
+                    XLeadSearch.auto_dm_enabled.is_(True),
+                )
+            )).scalars().all()
+        )
+
+        for search in searches:
+            # Fetch the first active X account for this business
+            account = await session.scalar(
+                select(XAccount).where(
+                    XAccount.business_id == search.business_id,
+                    XAccount.is_active.is_(True),
+                ).limit(1)
+            )
+            if account is None:
+                logger.warning(
+                    "auto_send_dms: no active X account for business_id=%s — skipping search %s",
+                    search.business_id,
+                    search.id,
+                )
+                continue
+
+            # Fetch pending prospects above the threshold
+            prospects = list(
+                (await session.execute(
+                    select(XOutreach).where(
+                        XOutreach.search_id == search.id,
+                        XOutreach.status == "pending",
+                        XOutreach.ai_score >= search.auto_dm_threshold,
+                        XOutreach.outreach_message.isnot(None),
+                    ).order_by(XOutreach.ai_score.desc()).limit(10)
+                )).scalars().all()
+            )
+
+            if not prospects:
+                continue
+
+            access_token = decrypt_secret(account.access_token)
+            client = XUserClient(access_token=access_token)
+            now = datetime.now(tz=timezone.utc)
+
+            for prospect in prospects:
+                try:
+                    result = await client.send_dm(prospect.x_user_id, prospect.outreach_message)  # type: ignore[arg-type]
+                    dm_event_id = (
+                        result.get("data", {}).get("dm_conversation_id")
+                        or result.get("data", {}).get("id")
+                    )
+                    prospect.status = "dm_sent"
+                    prospect.dm_message_id = str(dm_event_id) if dm_event_id else None
+                    prospect.dm_sent_at = now
+                    prospect.x_account_id = account.id
+                    prospect.updated_at = now
+                    await session.commit()
+                    logger.info(
+                        "Auto-DM sent to @%s (score=%s, search=%s)",
+                        prospect.username,
+                        prospect.ai_score,
+                        search.name,
+                    )
+                except XApiError as exc:
+                    await session.rollback()
+                    logger.error(
+                        "Failed to send auto-DM to @%s: X API %s",
+                        prospect.username,
+                        exc.status_code,
+                    )
+                except Exception:
+                    await session.rollback()
+                    logger.exception("Unexpected error sending auto-DM to @%s", prospect.username)

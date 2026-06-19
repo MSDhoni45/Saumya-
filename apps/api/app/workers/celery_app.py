@@ -46,6 +46,10 @@ celery_app.conf.update(
             "task": "x.refresh_tokens",
             "schedule": crontab(minute=30),      # every hour at :30
         },
+        "x-auto-send-dms": {
+            "task": "x.auto_send_dms",
+            "schedule": crontab(minute="*/30"),  # every 30 minutes
+        },
     },
 )
 

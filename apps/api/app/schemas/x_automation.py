@@ -88,6 +88,8 @@ class XLeadSearchCreateRequest(BaseModel):
     exclude_keywords: list[str] = Field(default_factory=list)
     min_followers: int = Field(100, ge=0)
     language: str = Field("en", max_length=5)
+    auto_dm_enabled: bool = False
+    auto_dm_threshold: int = Field(70, ge=0, le=100)
 
 
 class XLeadSearchResponse(BaseModel):
@@ -101,6 +103,8 @@ class XLeadSearchResponse(BaseModel):
     min_followers: int
     language: str
     is_active: bool
+    auto_dm_enabled: bool
+    auto_dm_threshold: int
     last_run_at: datetime | None
     created_at: datetime
 
@@ -127,6 +131,9 @@ class XOutreachResponse(BaseModel):
     outreach_message: str | None
     status: str
     sent_at: datetime | None
+    dm_sent_at: datetime | None
+    reply_text: str | None
+    replied_at: datetime | None
     created_at: datetime
 
 
@@ -165,3 +172,51 @@ class ContentIdeaResponse(BaseModel):
     type: str
     hook: str
     content: str
+
+
+# ---------------------------------------------------------------------------
+# Analytics
+# ---------------------------------------------------------------------------
+
+
+class XOutreachStats(BaseModel):
+    total: int
+    by_status: dict[str, int]
+    avg_score: float | None
+    sent_last_7d: int
+    dm_sent_last_7d: int
+    replied: int
+
+
+class XPostStats(BaseModel):
+    total: int
+    by_status: dict[str, int]
+
+
+class XSearchStats(BaseModel):
+    total: int
+    active: int
+
+
+class XTopLead(BaseModel):
+    username: str
+    display_name: str | None
+    ai_score: int | None
+    status: str
+    followers_count: int | None
+
+
+class XAnalyticsResponse(BaseModel):
+    outreach: XOutreachStats
+    posts: XPostStats
+    searches: XSearchStats
+    top_leads: list[XTopLead]
+
+
+# ---------------------------------------------------------------------------
+# DM send
+# ---------------------------------------------------------------------------
+
+
+class XSendDmRequest(BaseModel):
+    account_id: uuid.UUID = Field(..., description="X account to send the DM from")

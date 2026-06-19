@@ -92,6 +92,8 @@ class Settings(BaseSettings):
     x_client_id: str | None = None
     x_client_secret: str | None = None
     x_bearer_token: str | None = None   # App-only bearer token for search
+    # X Account Activity API webhook environment name (registered in dev portal)
+    x_webhook_env_name: str = "production"
 
     # --- Frontend ------------------------------------------------------------
     app_frontend_url: str | None = None

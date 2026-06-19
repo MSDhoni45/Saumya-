@@ -27,6 +27,7 @@ from app.db.session import engine
 from app.webhooks.razorpay_webhook import router as razorpay_webhook_router
 from app.webhooks.stripe_webhook import router as stripe_webhook_router
 from app.webhooks.whatsapp import router as whatsapp_webhook_router
+from app.webhooks.x_webhook import router as x_webhook_router
 
 configure_logging(debug=settings.debug, environment=settings.environment)
 
@@ -131,6 +132,7 @@ def create_app() -> FastAPI:
     app.include_router(whatsapp_webhook_router)
     app.include_router(stripe_webhook_router)
     app.include_router(razorpay_webhook_router)
+    app.include_router(x_webhook_router)
 
     app.include_router(auth_api_router, prefix=settings.api_v1_prefix)
     app.include_router(business_api_router, prefix=settings.api_v1_prefix)

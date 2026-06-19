@@ -35,12 +35,18 @@ from app.schemas.x_automation import (
     PaginatedXPosts,
     XAccountConnectRequest,
     XAccountResponse,
+    XAnalyticsResponse,
     XLeadSearchCreateRequest,
     XLeadSearchResponse,
     XOutreachResponse,
     XOutreachUpdateRequest,
+    XOutreachStats,
     XPostCreateRequest,
     XPostResponse,
+    XPostStats,
+    XSearchStats,
+    XSendDmRequest,
+    XTopLead,
 )
 from app.services.encryption import decrypt_secret, encrypt_secret
 from app.services.x_client import XApiError, XUserClient
@@ -349,6 +355,8 @@ async def create_lead_search(
         min_followers=payload.min_followers,
         language=payload.language,
         is_active=True,
+        auto_dm_enabled=payload.auto_dm_enabled,
+        auto_dm_threshold=payload.auto_dm_threshold,
     )
     session.add(search)
     await session.flush()
@@ -481,6 +489,152 @@ async def send_outreach_reply(
     await session.flush()
     await session.refresh(outreach)
     return XOutreachResponse.model_validate(outreach)
+
+
+@router.post("/{business_id}/outreach/{outreach_id}/send-dm", response_model=XOutreachResponse)
+async def send_outreach_dm(
+    business_id: uuid.UUID,
+    outreach_id: uuid.UUID,
+    payload: XSendDmRequest,
+    ctx: BusinessContext = Depends(get_current_business),
+    session: AsyncSession = Depends(get_db_session),
+) -> XOutreachResponse:
+    """Send the outreach message as a private Direct Message to the prospect."""
+    require_business_access(ctx, business_id)
+    outreach = await _get_outreach_or_404(session, business_id, outreach_id)
+
+    if outreach.status in ("dm_sent", "replied"):
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="DM already sent to this prospect")
+    if not outreach.outreach_message:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No outreach message to send")
+
+    account = await _get_account_or_404(session, business_id, payload.account_id)
+    access_token = decrypt_secret(account.access_token)
+    client = XUserClient(access_token=access_token)
+
+    try:
+        result = await client.send_dm(outreach.x_user_id, outreach.outreach_message)
+    except XApiError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=f"X API error: {exc.status_code}") from exc
+
+    now = datetime.now(tz=timezone.utc)
+    dm_event_id = (
+        result.get("data", {}).get("dm_conversation_id")
+        or result.get("data", {}).get("id")
+    )
+    outreach.status = "dm_sent"
+    outreach.dm_message_id = str(dm_event_id) if dm_event_id else None
+    outreach.dm_sent_at = now
+    outreach.x_account_id = account.id
+    outreach.updated_at = now
+    await session.flush()
+    await session.refresh(outreach)
+    return XOutreachResponse.model_validate(outreach)
+
+
+# ---------------------------------------------------------------------------
+# Analytics
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{business_id}/analytics", response_model=XAnalyticsResponse)
+async def x_analytics(
+    business_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
+    session: AsyncSession = Depends(get_db_session),
+) -> XAnalyticsResponse:
+    """Return X automation funnel metrics for the business dashboard."""
+    require_business_access(ctx, business_id)
+
+    from datetime import timedelta
+    from sqlalchemy import case, cast, Float
+
+    now = datetime.now(tz=timezone.utc)
+    seven_days_ago = now - timedelta(days=7)
+
+    # ── Outreach stats ───────────────────────────────────────────────────────
+    outreach_rows = list(
+        (await session.execute(
+            select(XOutreach).where(XOutreach.business_id == business_id)
+        )).scalars().all()
+    )
+
+    by_status: dict[str, int] = {}
+    total_score = 0
+    scored_count = 0
+    sent_last_7d = 0
+    dm_sent_last_7d = 0
+    replied_count = 0
+
+    for row in outreach_rows:
+        by_status[row.status] = by_status.get(row.status, 0) + 1
+        if row.ai_score is not None:
+            total_score += row.ai_score
+            scored_count += 1
+        if row.sent_at and row.sent_at >= seven_days_ago:
+            sent_last_7d += 1
+        if row.dm_sent_at and row.dm_sent_at >= seven_days_ago:
+            dm_sent_last_7d += 1
+        if row.status == "replied":
+            replied_count += 1
+
+    avg_score = round(total_score / scored_count, 1) if scored_count else None
+
+    # ── Post stats ───────────────────────────────────────────────────────────
+    from app.models.x_automation import XPost as _XPost, XLeadSearch as _XLeadSearch
+
+    post_rows = list(
+        (await session.execute(
+            select(_XPost).where(_XPost.business_id == business_id)
+        )).scalars().all()
+    )
+    post_by_status: dict[str, int] = {}
+    for row in post_rows:
+        post_by_status[row.status] = post_by_status.get(row.status, 0) + 1
+
+    # ── Search stats ─────────────────────────────────────────────────────────
+    search_rows = list(
+        (await session.execute(
+            select(_XLeadSearch).where(_XLeadSearch.business_id == business_id)
+        )).scalars().all()
+    )
+    active_searches = sum(1 for s in search_rows if s.is_active)
+
+    # ── Top leads (top 10 by AI score) ───────────────────────────────────────
+    top_outreach = sorted(
+        [r for r in outreach_rows if r.ai_score is not None],
+        key=lambda r: r.ai_score or 0,
+        reverse=True,
+    )[:10]
+
+    return XAnalyticsResponse(
+        outreach=XOutreachStats(
+            total=len(outreach_rows),
+            by_status=by_status,
+            avg_score=avg_score,
+            sent_last_7d=sent_last_7d,
+            dm_sent_last_7d=dm_sent_last_7d,
+            replied=replied_count,
+        ),
+        posts=XPostStats(
+            total=len(post_rows),
+            by_status=post_by_status,
+        ),
+        searches=XSearchStats(
+            total=len(search_rows),
+            active=active_searches,
+        ),
+        top_leads=[
+            XTopLead(
+                username=r.username,
+                display_name=r.display_name,
+                ai_score=r.ai_score,
+                status=r.status,
+                followers_count=r.followers_count,
+            )
+            for r in top_outreach
+        ],
+    )
 
 
 # ---------------------------------------------------------------------------
