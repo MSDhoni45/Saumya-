@@ -154,14 +154,16 @@ def create_app() -> FastAPI:
         db_ok: bool = Depends(_check_db),
         redis_ok: bool = Depends(_check_redis),
     ) -> JSONResponse:
-        all_ok = db_ok and redis_ok
+        # DB down = hard failure (503); Redis down = degraded but still 200
+        # so Railway considers the container healthy and can serve traffic.
+        # Redis issues surface as errors on individual requests, not at deploy time.
         return JSONResponse(
             content={
-                "status": "ok" if all_ok else "degraded",
+                "status": "ok" if (db_ok and redis_ok) else "degraded",
                 "db": "ok" if db_ok else "error",
                 "redis": "ok" if redis_ok else "error",
             },
-            status_code=200 if all_ok else 503,
+            status_code=200 if db_ok else 503,
         )
 
     return app

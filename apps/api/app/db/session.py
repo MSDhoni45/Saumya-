@@ -17,6 +17,9 @@ engine = create_async_engine(
     pool_size=5,
     max_overflow=5,
     pool_timeout=30,
+    # Supabase (and most managed Postgres hosts) require TLS. asyncpg needs
+    # ssl=True explicitly — it does not auto-upgrade plain connections.
+    connect_args={"ssl": True} if settings.environment != "local" else {},
 )
 
 async_session_factory = async_sessionmaker(
