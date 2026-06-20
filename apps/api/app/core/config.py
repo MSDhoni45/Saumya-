@@ -63,6 +63,12 @@ class Settings(BaseSettings):
     sentry_dsn: str | None = None
     sentry_traces_sample_rate: float = 0.1
 
+    # --- Billing master switch ------------------------------------------------
+    # When False, all Stripe/Razorpay checkout + webhook routes return 503 and
+    # subscription state is managed manually via the admin endpoint. Use during
+    # the pilot phase before a payment processor is connected.
+    billing_enabled: bool = False
+
     # --- Stripe ---------------------------------------------------------------
     stripe_secret_key: str | None = None
     stripe_webhook_secret: str | None = None

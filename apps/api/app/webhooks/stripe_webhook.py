@@ -7,6 +7,7 @@ import stripe
 from fastapi import APIRouter, Header, HTTPException, Request, status
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.db.session import async_session_factory
 from app.models.billing import Subscription
 from app.services import billing_service, stripe_service
@@ -25,6 +26,11 @@ async def stripe_webhook(
     Always returns 200 — Stripe retries aggressively on non-2xx responses so
     signature/parse failures are the only case where we raise a 400.
     """
+    if not settings.billing_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Billing is disabled",
+        )
     raw_body = await request.body()
 
     try:

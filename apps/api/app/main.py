@@ -10,6 +10,7 @@ from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 from sqlalchemy import text
 
+from app.api.v1.admin import router as admin_api_router
 from app.api.v1.agents import router as agents_api_router
 from app.api.v1.alerts import router as alerts_api_router
 from app.api.v1.analytics import router as analytics_api_router
@@ -140,6 +141,7 @@ def create_app() -> FastAPI:
     app.include_router(billing_api_router, prefix=settings.api_v1_prefix)
     app.include_router(analytics_api_router, prefix=settings.api_v1_prefix)
     app.include_router(alerts_api_router, prefix=settings.api_v1_prefix)
+    app.include_router(admin_api_router, prefix=settings.api_v1_prefix)
     app.include_router(team_router, prefix=settings.api_v1_prefix)
     # invite_router uses /invites prefix (no api_v1_prefix) — public URLs must
     # be short and bookmarkable, matching the `/invite/accept?token=...` frontend route.

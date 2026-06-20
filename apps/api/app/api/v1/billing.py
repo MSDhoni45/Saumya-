@@ -28,6 +28,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["billing"])
 
 
+def _require_billing_enabled() -> None:
+    if not settings.billing_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Self-serve billing is disabled on this deployment. "
+                "Contact support to activate or change your subscription."
+            ),
+        )
+
+
 def _default_success_url() -> str:
     base = settings.allowed_origins[0] if settings.allowed_origins else "http://localhost:3000"
     return f"{base}/settings/billing?success=true"
@@ -109,6 +120,7 @@ async def create_checkout(
 ):
     """Create a payment checkout session. Returns either a Stripe URL or Razorpay
     subscription details for the frontend to open the Razorpay widget."""
+    _require_billing_enabled()
     require_business_access(ctx, business_id)
 
     business = await session.get(Business, business_id)
@@ -178,6 +190,7 @@ async def change_plan(
     Stripe: updates the subscription price with proration.
     Razorpay: cancels the current subscription immediately and creates a new one.
     """
+    _require_billing_enabled()
     require_business_access(ctx, business_id)
     sub = await billing_service.get_or_create_subscription(session, business_id)
 
@@ -230,6 +243,7 @@ async def cancel_subscription(
     session: AsyncSession = Depends(get_db_session),
 ) -> CancelResponse:
     """Schedule the subscription to cancel at the end of the current period."""
+    _require_billing_enabled()
     require_business_access(ctx, business_id)
     sub = await billing_service.get_or_create_subscription(session, business_id)
 
@@ -267,6 +281,7 @@ async def reactivate_subscription(
     session: AsyncSession = Depends(get_db_session),
 ) -> SubscriptionResponse:
     """Remove the pending cancellation (only possible before the period ends)."""
+    _require_billing_enabled()
     require_business_access(ctx, business_id)
     sub = await billing_service.get_or_create_subscription(session, business_id)
 

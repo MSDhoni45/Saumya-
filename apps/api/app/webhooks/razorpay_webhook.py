@@ -7,6 +7,7 @@ import uuid
 from fastapi import APIRouter, Header, HTTPException, Request, status
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.db.session import async_session_factory
 from app.models.billing import Subscription
 from app.services import billing_service, razorpay_service
@@ -21,6 +22,11 @@ async def razorpay_webhook(
     x_razorpay_signature: str | None = Header(None, alias="X-Razorpay-Signature"),
 ) -> dict[str, str]:
     """Receive Razorpay subscription lifecycle and payment events."""
+    if not settings.billing_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Billing is disabled",
+        )
     raw_body = await request.body()
 
     if not x_razorpay_signature:
