@@ -1,59 +1,57 @@
 # Supabase migrations — WhatsAgent AI
 
-Ordered SQL migrations implementing the schema described in
-[`/docs/architecture/02-database-schema.md`](../../docs/architecture/02-database-schema.md).
-Apply with the Supabase CLI:
+Ordered SQL migrations implementing the canonical `businesses` schema. Apply with
+the Supabase CLI:
 
 ```bash
 supabase link --project-ref <project-ref>
 supabase db push
 ```
 
-or, for local development:
+For local dev:
 
 ```bash
 supabase start
-supabase db reset   # applies all migrations in this folder, in filename order
+supabase db reset   # applies all migrations in filename order
 ```
+
+In production, the API container runs them via `docker-entrypoint.sh` under an
+advisory lock (id `87412001`) when `RUN_MIGRATIONS=1`.
 
 ## Order & contents
 
 | File | Contents |
 |---|---|
-| `20260608120001_extensions_and_helpers.sql` | `pgcrypto`, `vector` extensions; generic `set_updated_at()` trigger function |
-| `20260608120002_enums.sql` | All enumerated types used across the schema |
-| `20260608120003_organizations_and_profiles.sql` | `organizations`, `profiles` (+ auto-create-on-signup trigger), `organization_members` |
-| `20260608120004_whatsapp_and_messaging.sql` | `whatsapp_connections`, `contacts`, `conversations`, `messages` (+ idempotency & last-message-at triggers) |
-| `20260608120005_knowledge_base.sql` | `knowledge_base_documents`, `knowledge_base_chunks` (pgvector embeddings + ivfflat index) |
-| `20260608120006_ai_agents.sql` | `ai_agents`, `ai_interactions` |
-| `20260608120007_crm_leads.sql` | `leads` (+ stage-change trigger), `lead_activities` |
-| `20260608120008_appointments_and_calendar.sql` | `calendar_connections`, `appointments` |
-| `20260608120009_follow_ups.sql` | `follow_up_sequences`, `follow_up_steps`, `follow_up_enrollments` |
-| `20260608120010_analytics_and_audit.sql` | `analytics_daily_stats`, `audit_logs` |
-| `20260608120011_row_level_security.sql` | `is_org_member` / `is_org_admin` / `is_org_owner` helper functions + RLS policies for every table |
+| `20260608130001_extensions_and_helpers.sql` | `pgcrypto`, `vector` extensions; `set_updated_at()` trigger |
+| `20260608130002_businesses_and_users.sql` | `businesses`, `users`, membership |
+| `20260608130003_whatsapp_accounts.sql` | `whatsapp_accounts` (encrypted tokens) |
+| `20260608130004_conversations_and_messages.sql` | `conversations`, `messages` (+ triggers) |
+| `20260608130005_leads_and_appointments.sql` | `leads`, `appointments` |
+| `20260608130006_knowledge_base_and_documents.sql` | `documents`, `document_chunks` (pgvector) |
+| `20260608130007_followup_sequences.sql` | `followup_sequences`, `followup_enrollments` |
+| `20260608130008_row_level_security.sql` | `is_business_member` helpers + RLS policies |
+| `20260608140001_ai_agents_and_lead_qualification.sql` | `ai_agents`, `ai_interactions`, lead qualification |
+| `20260608140002_auth_rbac_roles.sql` | RBAC roles + helpers |
+| `20260609000001_business_onboarding_completed.sql` | onboarding flag |
+| `20260609000002_billing.sql` | Stripe / Razorpay billing tables |
+| `20260609000003_team_invites.sql` | team invite flow |
+| `20260611000001_document_chunks.sql` | `document_chunks` ivfflat index tuning |
+| `20260611000002_message_status_callbacks.sql` | WhatsApp delivery callbacks |
+| `20260611000003_document_status_canonical.sql` | canonical document status enum |
+| `20260612000001_ai_interactions_inbound_unique.sql` | UNIQUE on `inbound_message_id` for outbound idempotency |
+| `20260612000002_operator_alerts.sql` | `operator_alerts` for `SEND_FAILED` / `STATUS_FAILED` |
 
 ## Notes
 
-- **Tenant isolation**: every tenant table carries `organization_id` and has
-  RLS enabled. Membership/role checks go through `SECURITY DEFINER` helper
-  functions (`is_org_member`, `is_org_admin`, `is_org_owner`) to avoid RLS
-  recursion when checking `organization_members` from policies on other
-  tables (and on itself).
-- **Service role**: the FastAPI backend uses the Supabase **service role**
-  for trusted server-side writes (webhook ingestion, AI replies, schedulers,
-  analytics rollups). The service role bypasses RLS by design — the backend
-  performs its own `organization_id` scoping in application code. Tables such
-  as `knowledge_base_chunks`, `ai_interactions`, `analytics_daily_stats`, and
-  `audit_logs` intentionally have **no write policies** for regular users —
-  they are written only by the service role.
-- **Embeddings**: `knowledge_base_chunks.embedding` is `vector(1536)`,
-  matching OpenAI's `text-embedding-3-small` / `text-embedding-ada-002`. If a
-  different embedding model is chosen, update the column dimension and rebuild
-  the `ivfflat` index (and re-tune its `lists` parameter as the corpus grows).
-- **Encrypted secrets**: `access_token_encrypted` / `refresh_token_encrypted`
-  columns are `bytea`. Encrypt/decrypt at the application layer (e.g.
-  AES-GCM with a key from your secrets manager) before reading/writing —
-  do not store plaintext tokens.
-- **Auto profile creation**: a trigger on `auth.users` creates a matching
-  `profiles` row on signup, seeded from `raw_user_meta_data` (`full_name`,
-  `avatar_url`).
+- **Tenant isolation**: every tenant table carries `business_id`, RLS enabled.
+  Membership/role checks go through `SECURITY DEFINER` helpers
+  (`is_business_member`, etc.) to avoid RLS recursion.
+- **Service role**: API uses Supabase service role for trusted server-side
+  writes. Bypasses RLS by design — backend scopes `business_id` in app code via
+  `db_context`. Tables like `document_chunks`, `ai_interactions`, `audit_logs`
+  intentionally have no user-facing write policies.
+- **Embeddings**: `document_chunks.embedding` is `vector(1536)`, matching
+  `text-embedding-3-small`. Change the column + rebuild `ivfflat` if model
+  changes.
+- **Encrypted secrets**: `*_token_encrypted` columns are `bytea`; encrypt with
+  Fernet (`TOKEN_ENCRYPTION_KEY`) at the application layer.
