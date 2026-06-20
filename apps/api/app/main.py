@@ -22,7 +22,7 @@ from app.api.v1.leads import router as leads_api_router
 from app.api.v1.team import invite_router, team_router
 from app.api.v1.whatsapp import router as whatsapp_api_router
 from app.core.config import settings
-from app.core.logging import configure_logging
+from app.core.logging import configure_logging, request_id_var
 from app.db.session import engine
 from app.webhooks.razorpay_webhook import router as razorpay_webhook_router
 from app.webhooks.stripe_webhook import router as stripe_webhook_router
@@ -112,7 +112,11 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def add_correlation_id(request: Request, call_next):
         request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
-        response = await call_next(request)
+        token = request_id_var.set(request_id)
+        try:
+            response = await call_next(request)
+        finally:
+            request_id_var.reset(token)
         response.headers["X-Request-ID"] = request_id
         return response
 

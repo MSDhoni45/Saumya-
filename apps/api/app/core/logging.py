@@ -5,10 +5,17 @@ environments (staging, production) use JSON so logs can be parsed by
 log aggregators (Datadog, Loki, CloudWatch, etc.).
 """
 
+import contextvars
 import json
 import logging
 import traceback
 from datetime import datetime, timezone
+
+# Bound by the correlation-id middleware so every log line emitted during a
+# request carries the same request_id without callers passing it explicitly.
+request_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "request_id", default=None
+)
 
 
 class _JsonFormatter(logging.Formatter):
@@ -19,6 +26,9 @@ class _JsonFormatter(logging.Formatter):
             "logger": record.name,
             "msg": record.getMessage(),
         }
+        rid = request_id_var.get()
+        if rid:
+            obj["request_id"] = rid
         if record.exc_info:
             obj["exc"] = "".join(traceback.format_exception(*record.exc_info)).strip()
         # Any extra kwargs passed to logger.info(..., extra={...}) land here
