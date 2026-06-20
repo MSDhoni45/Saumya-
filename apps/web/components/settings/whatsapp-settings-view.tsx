@@ -8,6 +8,7 @@ import {
   useDisconnectWhatsApp,
   useWhatsAppAccounts,
 } from "@/lib/inbox/queries";
+import { useBusiness, useUpdateBusiness } from "@/lib/onboarding/queries";
 import type { UserRole } from "@/lib/auth/rbac";
 import type { WhatsAppAccount } from "@/lib/inbox/types";
 
@@ -62,6 +63,8 @@ export function WhatsAppSettingsView({
       )}
 
       {canManage && <ConnectAccountForm businessId={businessId} />}
+
+      <LeadNotificationCard businessId={businessId} canManage={canManage} />
     </div>
   );
 }
@@ -227,6 +230,114 @@ function ConnectAccountForm({ businessId }: { businessId: string }) {
         </button>
       </div>
     </form>
+  );
+}
+
+function LeadNotificationCard({
+  businessId,
+  canManage,
+}: {
+  businessId: string;
+  canManage: boolean;
+}) {
+  const { data: business } = useBusiness(businessId);
+  const update = useUpdateBusiness(businessId);
+  const [phone, setPhone] = useState("");
+  const [editing, setEditing] = useState(false);
+
+  const saved = business?.notify_whatsapp_phone ?? null;
+
+  function startEdit() {
+    setPhone(saved ?? "");
+    setEditing(true);
+  }
+
+  function handleSave() {
+    const value = phone.trim() || null;
+    update.mutate(
+      { notify_whatsapp_phone: value } as Parameters<typeof update.mutate>[0],
+      {
+        onSuccess: () => {
+          toast.success(value ? "Notification number saved." : "Notification number removed.");
+          setEditing(false);
+        },
+        onError: () => toast.error("Invalid number — use E.164 format e.g. +919876543210"),
+      },
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-5">
+      <h2 className="text-sm font-semibold text-slate-900">X Lead Notifications</h2>
+      <p className="mt-1 text-xs text-slate-500">
+        When a new X lead scores 70+, we'll WhatsApp you the details so you can DM them manually.
+      </p>
+
+      <div className="mt-4">
+        {!editing ? (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-slate-700">
+              {saved ? (
+                <>
+                  Notifying <span className="font-mono font-medium">{saved}</span>
+                </>
+              ) : (
+                <span className="text-slate-400">No notification number set</span>
+              )}
+            </span>
+            {canManage && (
+              <button
+                type="button"
+                onClick={startEdit}
+                className="text-xs font-medium text-brand-600 hover:text-brand-700"
+              >
+                {saved ? "Change" : "Set up"}
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+919876543210"
+              className="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            />
+            <p className="text-xs text-slate-400">
+              Must be in E.164 format — country code first, e.g. +91 for India.
+              This number must have messaged your business WhatsApp at least once.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={update.isPending}
+                className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+              >
+                {update.isPending ? "Saving…" : "Save"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditing(false)}
+                className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:border-slate-300"
+              >
+                Cancel
+              </button>
+              {saved && (
+                <button
+                  type="button"
+                  onClick={() => { setPhone(""); handleSave(); }}
+                  className="ml-auto text-xs text-red-400 hover:text-red-600"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -156,6 +156,9 @@ async def _do_lead_scan(session: AsyncSession, search_id: uuid.UUID) -> None:
         )
         session.add(outreach)
 
+        if scoring["score"] >= 70:
+            await _notify_lead_on_whatsapp(session, outreach, search.business_id)
+
     search.last_run_at = datetime.now(tz=timezone.utc)
     logger.info(
         "X lead scan complete for search_id=%s — processed %d tweets",
@@ -394,3 +397,61 @@ async def _auto_send_dms() -> None:
                 except Exception:
                     await session.rollback()
                     logger.exception("Unexpected error sending auto-DM to @%s", prospect.username)
+
+
+# ---------------------------------------------------------------------------
+# Helper: WhatsApp lead notification
+# ---------------------------------------------------------------------------
+
+
+async def _notify_lead_on_whatsapp(
+    session: AsyncSession, outreach: XOutreach, business_id: uuid.UUID
+) -> None:
+    """Send a WhatsApp nudge to the business owner so they can manually DM the lead on X."""
+    from app.models.whatsapp import Business, WhatsAppAccount
+    from app.services.encryption import decrypt_secret
+    from app.services.whatsapp_client import WhatsAppClient
+
+    business = await session.get(Business, business_id)
+    if not business or not business.notify_whatsapp_phone:
+        return
+
+    wa_account = await session.scalar(
+        select(WhatsAppAccount).where(
+            WhatsAppAccount.business_id == business_id,
+            WhatsAppAccount.status == "connected",
+        ).limit(1)
+    )
+    if not wa_account or not wa_account.access_token:
+        return
+
+    followers_str = f"{outreach.followers_count:,}" if outreach.followers_count else "?"
+    tweet_snippet = (outreach.tweet_text or "")[:200]
+    draft = (outreach.outreach_message or "")[:300]
+
+    body = (
+        f"*New X Lead — Score {outreach.ai_score}/100*\n\n"
+        f"@{outreach.username} · {followers_str} followers\n\n"
+        f"*Their tweet:*\n\"{tweet_snippet}\"\n\n"
+        f"*Why they're a fit:* {outreach.ai_score_reason or '-'}\n\n"
+        f"*Draft DM:*\n\"{draft}\"\n\n"
+        f"Go DM them: x.com/{outreach.username}"
+    )
+
+    try:
+        access_token = decrypt_secret(wa_account.access_token)
+        client = WhatsAppClient(
+            phone_number_id=wa_account.phone_number_id,
+            access_token=access_token,
+        )
+        await client.send_text_message(to=business.notify_whatsapp_phone, body=body)
+        logger.info(
+            "WA lead notification sent for @%s (score=%s)",
+            outreach.username,
+            outreach.ai_score,
+        )
+    except Exception:
+        logger.warning(
+            "WA lead notification failed for @%s — owner may not be in 24h window",
+            outreach.username,
+        )

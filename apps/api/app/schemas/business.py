@@ -9,6 +9,7 @@ class BusinessUpdateRequest(BaseModel):
     industry: str | None = None
     timezone: str | None = None
     onboarding_completed: bool | None = None
+    notify_whatsapp_phone: str | None = Field(None, pattern=r"^\+[1-9]\d{6,14}$")
 
 
 class BusinessResponse(BaseModel):
@@ -19,5 +20,6 @@ class BusinessResponse(BaseModel):
     industry: str | None
     timezone: str
     onboarding_completed: bool
+    notify_whatsapp_phone: str | None
     created_at: datetime
     updated_at: datetime

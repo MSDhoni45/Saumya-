@@ -19,6 +19,7 @@ export interface BusinessDetail {
   industry: string | null;
   timezone: string;
   onboarding_completed: boolean;
+  notify_whatsapp_phone: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -28,6 +29,7 @@ export interface BusinessUpdatePayload {
   industry?: string | null;
   timezone?: string;
   onboarding_completed?: boolean;
+  notify_whatsapp_phone?: string | null;
 }
 
 // ---------------------------------------------------------------------------
