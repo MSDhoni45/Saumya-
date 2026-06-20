@@ -1,0 +1,19 @@
+# Railway deployment — API service (default)
+#
+# Three Railway services share this repo:
+#   1. API (this file's defaults)        — set RUN_MIGRATIONS=1 on this service only
+#   2. Worker (override startCommand)    — celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=2 -Q default,ai,billing
+#   3. Beat   (override startCommand)    — celery -A app.workers.celery_app.celery_app beat   --loglevel=info
+
+[build]
+builder       = "DOCKERFILE"
+dockerfilePath = "apps/api/Dockerfile"
+buildContext  = "."
+watchPatterns = ["apps/api/**", "supabase/migrations/**"]
+
+[deploy]
+startCommand        = "gunicorn app.main:app --worker-class uvicorn.workers.UvicornWorker --workers 2 --bind 0.0.0.0:$PORT --timeout 120 --graceful-timeout 30 --access-logfile - --error-logfile -"
+healthcheckPath     = "/health"
+healthcheckTimeout  = 300
+restartPolicyType   = "ON_FAILURE"
+restartPolicyMaxRetries = 3
