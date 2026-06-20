@@ -30,7 +30,7 @@ export function MemberRow({ member, currentUserId, isAdmin, businessId }: Props)
         .join("")
         .toUpperCase()
         .slice(0, 2)
-    : member.email[0].toUpperCase();
+    : (member.email?.[0] ?? "?").toUpperCase();
 
   function handleRoleToggle() {
     const newRole = member.role === "business_admin" ? "team_member" : "business_admin";

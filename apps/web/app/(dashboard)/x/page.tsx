@@ -4,6 +4,6 @@ import { XDashboardView } from "@/components/x/dashboard-view";
 
 export default async function XDashboardPage() {
   const session = await getSession();
-  if (!session) redirect("/login");
+  if (!session || !session.business) redirect("/login");
   return <XDashboardView businessId={session.business.id} />;
 }

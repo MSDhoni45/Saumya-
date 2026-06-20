@@ -8,7 +8,7 @@ export default async function XConnectPage({
   searchParams: Promise<{ connected?: string; username?: string; error?: string }>;
 }) {
   const session = await getSession();
-  if (!session) redirect("/login");
+  if (!session || !session.business) redirect("/login");
 
   const params = await searchParams;
 

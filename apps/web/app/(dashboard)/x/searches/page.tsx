@@ -4,6 +4,6 @@ import { XSearchesView } from "@/components/x/searches-view";
 
 export default async function XSearchesPage() {
   const session = await getSession();
-  if (!session) redirect("/login");
+  if (!session || !session.business) redirect("/login");
   return <XSearchesView businessId={session.business.id} />;
 }

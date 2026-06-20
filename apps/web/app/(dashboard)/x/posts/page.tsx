@@ -4,6 +4,6 @@ import { XPostsView } from "@/components/x/posts-view";
 
 export default async function XPostsPage() {
   const session = await getSession();
-  if (!session) redirect("/login");
+  if (!session || !session.business) redirect("/login");
   return <XPostsView businessId={session.business.id} />;
 }

@@ -7,7 +7,7 @@ export const metadata = { title: "AI Agents — WhatsAgent AI" };
 
 export default async function AgentsPage() {
   const session = await getSession();
-  if (!session) redirect("/login");
+  if (!session || !session.business) redirect("/login");
   if (!session.business) redirect("/onboarding?step=1");
 
   return <AgentsListView businessId={session.business.id} />;

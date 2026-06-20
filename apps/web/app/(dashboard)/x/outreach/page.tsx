@@ -4,6 +4,6 @@ import { XOutreachView } from "@/components/x/outreach-view";
 
 export default async function XOutreachPage() {
   const session = await getSession();
-  if (!session) redirect("/login");
+  if (!session || !session.business) redirect("/login");
   return <XOutreachView businessId={session.business.id} />;
 }

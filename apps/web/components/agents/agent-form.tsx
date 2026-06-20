@@ -47,7 +47,7 @@ export function AgentForm({ initial, onSave, saving, saveLabel = "Save agent" }:
 
   function handleProviderChange(p: "openai" | "anthropic") {
     setProvider(p);
-    setModel(MODELS[p][0].value);
+    setModel(MODELS[p]?.[0]?.value ?? "");
   }
 
   async function handleSubmit(e: React.FormEvent) {

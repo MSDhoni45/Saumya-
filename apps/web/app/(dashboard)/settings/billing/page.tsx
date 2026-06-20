@@ -7,7 +7,7 @@ export const metadata = { title: "Billing — WhatsAgent AI" };
 
 export default async function BillingPage() {
   const session = await getSession();
-  if (!session) redirect("/login");
+  if (!session || !session.business) redirect("/login");
   if (!session.business) redirect("/onboarding?step=1");
 
   return <BillingView businessId={session.business.id} />;
