@@ -134,6 +134,7 @@ async def refresh(
     response: Response,
     session: AsyncSession = Depends(get_db_session),
     refresh_token_cookie: str | None = Cookie(None, alias=settings.auth_refresh_token_cookie),
+    _rl: None = rate_limit(max_requests=30, window_seconds=60),
 ) -> SessionResponse:
     """Exchange a refresh token for a new session.
 
@@ -183,7 +184,10 @@ async def forgot_password(
 
 
 @router.post("/reset-password", response_model=MessageResponse)
-async def reset_password(payload: ResetPasswordRequest) -> MessageResponse:
+async def reset_password(
+    payload: ResetPasswordRequest,
+    _rl: None = rate_limit(max_requests=5, window_seconds=300),
+) -> MessageResponse:
     """Complete a password reset using the recovery session from the emailed link.
 
     The frontend's reset-password page exchanges the link's recovery token

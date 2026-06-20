@@ -4,6 +4,7 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, 
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rate_limit import rate_limit
 from app.core.security import verify_whatsapp_webhook_handshake, verify_whatsapp_webhook_signature
 from app.db.session import async_session_factory
 from app.schemas.whatsapp import MessageResponse, WebhookEnvelope, WebhookMediaPayload
@@ -41,6 +42,11 @@ async def verify_webhook(
 async def receive_webhook(
     request: Request,
     x_hub_signature_256: str | None = Header(None, alias="X-Hub-Signature-256"),
+    # Generous per-IP cap. The HMAC signature check below is the real gate
+    # (only Meta knows the app secret), but this bounds spoofed-IP floods
+    # before the crypto work and keeps Redis/CPU from being a DDoS sink.
+    # Tune up if Meta's IPs concentrate behind a small set under burst load.
+    _rl: None = rate_limit(max_requests=600, window_seconds=60),
 ) -> dict[str, str]:
     """Receive inbound WhatsApp events (messages, status updates).
 
