@@ -44,6 +44,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <a href="/leads" className="font-medium text-slate-700 hover:text-brand-600">
               Leads
             </a>
+            <a href="/x" className="font-medium text-slate-700 hover:text-brand-600">
+              X / Twitter
+            </a>
             <a href="/analytics" className="font-medium text-slate-700 hover:text-brand-600">
               Analytics
             </a>
