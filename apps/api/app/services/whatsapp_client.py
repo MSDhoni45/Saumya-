@@ -160,3 +160,33 @@ class WhatsAppClient:
         if response.is_error:
             raise WhatsAppApiError(response.status_code, None)
         return response.content
+
+    # --- Templates + health -----------------------------------------------------
+
+    async def list_message_templates(
+        self, waba_id: str, *, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        """List approved/pending templates for a WhatsApp Business Account.
+
+        Meta is the source of truth for template approval; we never persist
+        these — the frontend fetches them live so status stays correct.
+        """
+        url = f"{self._base_url}/{waba_id}/message_templates?limit={limit}"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url, headers=self._headers())
+        if response.is_error:
+            raise WhatsAppApiError(response.status_code, response.json() if response.content else None)
+        return response.json().get("data", [])
+
+    async def verify_token(self) -> bool:
+        """Cheap liveness probe — returns True if the token can still call Graph.
+
+        Used by the daily token-health beat task to alert when a tenant's
+        access token has been revoked or expired in Business Manager.
+        """
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(
+                f"{self._base_url}/{self._phone_number_id}",
+                headers=self._headers(),
+            )
+        return not response.is_error

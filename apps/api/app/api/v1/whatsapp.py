@@ -70,6 +70,32 @@ async def list_whatsapp_accounts(
     return list(result.scalars().all())
 
 
+@router.get("/{business_id}/accounts/{account_id}/templates")
+async def list_message_templates(
+    business_id: uuid.UUID,
+    account_id: uuid.UUID,
+    ctx: BusinessContext = Depends(get_current_business),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[dict]:
+    """List the WABA's approved + pending message templates, live from Meta.
+
+    Not cached in our DB — Meta is the source of truth for approval status,
+    and stale rows would silently break out-of-window sends.
+    """
+    require_business_access(ctx, business_id)
+    account = await _get_account_or_404(session, business_id, account_id)
+    if not account.access_token or not account.waba_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="WhatsApp account is not connected")
+    client = WhatsAppClient(
+        phone_number_id=account.phone_number_id,
+        access_token=decrypt_secret(account.access_token),
+    )
+    try:
+        return await client.list_message_templates(account.waba_id)
+    except WhatsAppApiError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
 @router.post("/{business_id}/accounts/{account_id}/disconnect", response_model=WhatsAppAccountResponse)
 async def disconnect_whatsapp_account(
     business_id: uuid.UUID,
