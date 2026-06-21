@@ -66,6 +66,9 @@ export default function LandingPage() {
             <a href="#pricing" className="text-slate-600 hover:text-slate-900">
               Pricing
             </a>
+            <Link href="/docs" className="text-slate-600 hover:text-slate-900">
+              Docs
+            </Link>
             <Link href="/login" className="text-slate-600 hover:text-slate-900">
               Sign in
             </Link>
