@@ -98,7 +98,8 @@ async def run_migrations() -> int:
         logger.warning("No migration files found in %s — nothing to do", directory)
         return 0
 
-    conn = await asyncpg.connect(_asyncpg_dsn(settings.database_url))
+    ssl = True if settings.environment != "local" else None
+    conn = await asyncpg.connect(_asyncpg_dsn(settings.database_url), ssl=ssl)
     try:
         await conn.execute("SELECT pg_advisory_lock($1)", _ADVISORY_LOCK_ID)
         try:
