@@ -2,7 +2,7 @@
 #
 # Three Railway services share this repo:
 #   1. API (this file's defaults)        — set RUN_MIGRATIONS=1 on this service only
-#   2. Worker (override startCommand)    — celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=2 -Q default,ai,billing
+#   2. Worker (override startCommand)    — celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=2
 #   3. Beat   (override startCommand)    — celery -A app.workers.celery_app.celery_app beat   --loglevel=info
 
 [build]
