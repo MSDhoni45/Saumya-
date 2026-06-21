@@ -13,10 +13,14 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import func, select
+
 from app.api.deps import require_roles
 from app.core.plans import get_plan
 from app.db.session import get_db_session
+from app.models.billing import Subscription
 from app.models.user import User
+from app.models.whatsapp import Business
 from app.schemas.billing import SubscriptionResponse
 from app.services import billing_service
 from pydantic import BaseModel, Field
@@ -29,6 +33,52 @@ class ManualActivationRequest(BaseModel):
     plan: str = Field(..., description="starter | growth | agency | free")
     period_days: int = Field(30, ge=1, le=400)
     note: str | None = None
+
+
+class BusinessListItem(BaseModel):
+    id: uuid.UUID
+    name: str
+    industry: str | None
+    plan: str
+    status: str
+    created_at: datetime
+
+
+@router.get("/businesses", response_model=list[BusinessListItem])
+async def list_businesses(
+    q: str | None = None,
+    limit: int = 50,
+    current_user: User = Depends(require_roles("super_admin")),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[BusinessListItem]:
+    """Operator-only directory for the manual billing console.
+
+    `q` is a case-insensitive substring match on business name. Subscription
+    plan/status come from the left-joined `subscriptions` row; businesses
+    without a subscription row are reported as `free`/`active` (matches what
+    `billing_service.get_or_create_subscription` would produce on first read).
+    """
+    limit = max(1, min(limit, 200))
+    stmt = (
+        select(Business, Subscription)
+        .outerjoin(Subscription, Subscription.business_id == Business.id)
+        .order_by(Business.created_at.desc())
+        .limit(limit)
+    )
+    if q:
+        stmt = stmt.where(func.lower(Business.name).contains(q.lower()))
+    rows = (await session.execute(stmt)).all()
+    return [
+        BusinessListItem(
+            id=b.id,
+            name=b.name,
+            industry=b.industry,
+            plan=sub.plan if sub else "free",
+            status=sub.status if sub else "active",
+            created_at=b.created_at,
+        )
+        for b, sub in rows
+    ]
 
 
 @router.post(

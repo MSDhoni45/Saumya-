@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ApiError, api } from "@/lib/api/client";
 
@@ -12,10 +12,42 @@ interface SubscriptionResponse {
   current_period_end: string | null;
 }
 
+interface BusinessListItem {
+  id: string;
+  name: string;
+  industry: string | null;
+  plan: string;
+  status: string;
+  created_at: string;
+}
+
 const PLANS = ["starter", "growth", "agency", "free"] as const;
 
 export function ManualBillingForm() {
   const [businessId, setBusinessId] = useState("");
+  const [businesses, setBusinesses] = useState<BusinessListItem[]>([]);
+  const [search, setSearch] = useState("");
+  const [loadingList, setLoadingList] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      setLoadingList(true);
+      try {
+        const qs = search.trim() ? `?q=${encodeURIComponent(search.trim())}` : "";
+        const list = await api.get<BusinessListItem[]>(`/admin/businesses${qs}`);
+        if (!cancelled) setBusinesses(list);
+      } catch {
+        // Silent — operator can still paste a UUID directly.
+      } finally {
+        if (!cancelled) setLoadingList(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [search]);
   const [plan, setPlan] = useState<(typeof PLANS)[number]>("starter");
   const [periodDays, setPeriodDays] = useState(30);
   const [note, setNote] = useState("");
@@ -60,17 +92,57 @@ export function ManualBillingForm() {
 
   return (
     <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-      <div className="space-y-1">
-        <label htmlFor="business_id" className="block text-sm font-medium text-slate-900">
-          Business ID
+      <div className="space-y-2">
+        <label htmlFor="business_search" className="block text-sm font-medium text-slate-900">
+          Business
         </label>
+        <input
+          id="business_search"
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name…"
+          className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+          autoComplete="off"
+        />
+        <div className="max-h-48 overflow-y-auto rounded border border-slate-200">
+          {loadingList && businesses.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-slate-500">Loading…</p>
+          ) : businesses.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-slate-500">No matches.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {businesses.map((b) => (
+                <li key={b.id}>
+                  <button
+                    type="button"
+                    onClick={() => setBusinessId(b.id)}
+                    className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-slate-50 ${
+                      businessId === b.id ? "bg-brand-50" : ""
+                    }`}
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      <span className="font-medium text-slate-900">{b.name}</span>
+                      {b.industry && (
+                        <span className="ml-2 text-xs text-slate-500">{b.industry}</span>
+                      )}
+                    </span>
+                    <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                      {b.plan} · {b.status}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         <input
           id="business_id"
           type="text"
           value={businessId}
           onChange={(e) => setBusinessId(e.target.value)}
-          placeholder="00000000-0000-0000-0000-000000000000"
-          className="w-full rounded border border-slate-300 px-3 py-2 font-mono text-sm focus:border-brand-500 focus:outline-none"
+          placeholder="…or paste business UUID"
+          className="w-full rounded border border-slate-300 px-3 py-2 font-mono text-xs focus:border-brand-500 focus:outline-none"
           autoComplete="off"
           spellCheck={false}
         />
