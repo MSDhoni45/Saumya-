@@ -1,0 +1,75 @@
+name: weekly-restore-drill
+
+# Pulls the most recent production Postgres dump from S3, restores it into a
+# throwaway RDS-style scratch DB, and runs sanity queries. If this job fails,
+# the prod backup is suspect — page operator immediately.
+
+on:
+  schedule:
+    # Every Monday 03:30 UTC (09:00 IST). After the 03:00 UTC nightly backup
+    # has had time to upload.
+    - cron: "30 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      backup_key:
+        description: "Explicit S3 key to restore (leave empty for newest)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write  # for OIDC -> AWS
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      scratch_pg:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: drill
+          POSTGRES_PASSWORD: drill
+          POSTGRES_DB: drill
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U drill"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install postgres client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: configure aws credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_RESTORE_DRILL_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: run restore drill
+        env:
+          S3_BUCKET: ${{ secrets.BACKUP_BUCKET }}
+          SCRATCH_DB_URL: postgres://drill:drill@localhost:5432/drill
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          BACKUP_KEY: ${{ inputs.backup_key }}
+          MIN_ROWS_USERS: "1"
+        run: bash infra/scripts/restore_drill.sh
+
+      - name: notify on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK: ${{ secrets.OPS_SLACK_WEBHOOK }}
+        run: |
+          if [[ -n "${SLACK_WEBHOOK}" ]]; then
+            curl -sS -X POST -H 'Content-Type: application/json' \
+              --data "{\"text\":\":rotating_light: weekly restore drill failed in ${GITHUB_REPOSITORY}@${GITHUB_REF_NAME} — prod backup may be broken. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}" \
+              "${SLACK_WEBHOOK}"
+          fi

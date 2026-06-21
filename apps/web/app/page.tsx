@@ -102,7 +102,7 @@ export default function LandingPage() {
                 Start 7-day pilot
               </Link>
               <a
-                href="https://cal.com/influnexus/whatsagent-demo"
+                href="mailto:hello@influnexus.com?subject=WhatsAgent%20demo"
                 className="rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-50"
               >
                 Book a 15-min demo
@@ -204,7 +204,7 @@ export default function LandingPage() {
                 ))}
               </ul>
               <Link
-                href={t.highlight ? "/signup" : "https://cal.com/influnexus/whatsagent-demo"}
+                href={t.highlight ? "/signup" : "mailto:hello@influnexus.com?subject=WhatsAgent%20demo"}
                 className={`mt-6 block rounded-lg px-4 py-2.5 text-center text-sm font-semibold ${
                   t.highlight
                     ? "bg-brand-600 text-white hover:bg-brand-700"
@@ -232,7 +232,7 @@ export default function LandingPage() {
               Start free pilot
             </Link>
             <a
-              href="https://cal.com/influnexus/whatsagent-demo"
+              href="mailto:hello@influnexus.com?subject=WhatsAgent%20demo"
               className="rounded-lg border border-slate-700 px-5 py-3 text-sm font-semibold hover:bg-slate-800"
             >
               Book demo
