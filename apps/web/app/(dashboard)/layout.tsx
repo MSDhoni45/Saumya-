@@ -56,6 +56,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <a href="/settings/whatsapp" className="font-medium text-slate-700 hover:text-brand-600">
               Settings
             </a>
+            {user.role === "super_admin" && (
+              <a href="/admin" className="font-medium text-amber-700 hover:text-amber-900">
+                Operator
+              </a>
+            )}
             <SignOutButton />
           </nav>
         </div>
